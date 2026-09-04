@@ -67,7 +67,9 @@ export function DrawingCanvas({
       r = c.getBoundingClientRect();
     x.lineCap = 'round';
     x.lineJoin = 'round';
-    x.strokeStyle = tool === 'eraser' ? '#fffdf8' : '#493d63';
+    x.globalCompositeOperation =
+      tool === 'eraser' ? 'destination-out' : 'source-over';
+    x.strokeStyle = '#493d63';
     x.lineWidth = tool === 'eraser' ? 24 : Math.max(3, 4 * (e.pressure || 0.5));
     for (const point of e.nativeEvent.getCoalescedEvents?.() ?? [
       e.nativeEvent,
