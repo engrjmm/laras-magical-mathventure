@@ -8,3 +8,4 @@ body{background:radial-gradient(circle at 10% 0,#fff6fb 0,#f3edff 34%,#eaf8ff 72
 .answers button:focus-visible{outline:4px solid #8e68bd;outline-offset:3px}
 .answers button:active{transform:scale(.99)}
 .answers button.selected,.answers button.selected:hover,.answers button.selected:focus{border-color:#8e68bd;background:linear-gradient(135deg,#8e68bd,#b276bd);color:#fff;box-shadow:0 8px 20px #7c55a833}
+.notebook,.notebook *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}.notebook-paper{position:relative;background-color:#fffdf8;background-image:linear-gradient(#dde9f1 1px,transparent 1px),linear-gradient(90deg,#edf2f5 1px,transparent 1px);background-size:28px 28px}.notebook-problem{margin:0;padding:20px 28px 0;background:#fffdf8;width:190px;min-width:0;font-size:44px}.notebook canvas{background:transparent;background-image:none}.notebook-problem+canvas{margin-top:0}

@@ -643,28 +643,18 @@ function Play({
           {MODE_INFO[save.practice.mode].icon}{' '}
           {MODE_INFO[save.practice.mode].name}
         </p>
-        {advanced ? (
-          <div className="vertical-problem">
-            <span>{q.a}</span>
-            <span>× {q.b}</span>
-            <hr />
-          </div>
-        ) : (
+        {advanced ? null : (
           <div className="flash-problem">
             {q.a} × {q.b} = ?
           </div>
         )}
         {advanced && (
-          <>
-            <p className="solve-flow">
-              Look <i>→</i> Calculate <i>→</i> Write <i>→</i> Check <i>→</i>{' '}
-              Answer
-            </p>
-            <DrawingCanvas
-              large={save.practice.mode === '3x2'}
-              resetKey={q.key}
-            />
-          </>
+          <DrawingCanvas
+            a={q.a}
+            b={q.b}
+            large={save.practice.mode === '3x2'}
+            resetKey={q.key}
+          />
         )}
         <div className="answer-zone">
           <h2>🌟 What’s your final answer?</h2>
