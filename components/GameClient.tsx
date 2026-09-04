@@ -656,7 +656,7 @@ function Play({
             resetKey={q.key}
           />
         )}
-        <div className="answer-zone">
+        <div className={`answer-zone ${advanced ? 'compact-answers' : ''}`}>
           <h2>🌟 What’s your final answer?</h2>
           <div className="answers">
             {q.options.map((n) => (
