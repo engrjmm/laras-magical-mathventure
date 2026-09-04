@@ -7,3 +7,4 @@ body{background:radial-gradient(circle at 10% 0,#fff6fb 0,#f3edff 34%,#eaf8ff 72
 .answers button:hover,.answers button:focus{border-color:#ded2e9;background:linear-gradient(#fff,#faf6ff)}
 .answers button:focus-visible{outline:4px solid #8e68bd;outline-offset:3px}
 .answers button:active{transform:scale(.99)}
+.answers button.selected,.answers button.selected:hover,.answers button.selected:focus{border-color:#8e68bd;background:linear-gradient(135deg,#8e68bd,#b276bd);color:#fff;box-shadow:0 8px 20px #7c55a833}
