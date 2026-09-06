@@ -31,6 +31,9 @@ using ((select auth.uid()) = parent_id);
 create index if not exists child_profiles_parent_id_idx
 on public.child_profiles(parent_id);
 
+create unique index if not exists child_profiles_one_per_parent_idx
+on public.child_profiles(parent_id);
+
 create table if not exists public.subscription_payments (
   id uuid primary key default gen_random_uuid(),
   parent_id uuid not null references auth.users(id) on delete cascade,

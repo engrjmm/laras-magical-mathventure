@@ -137,6 +137,7 @@ export function GameClient() {
     [complete, setComplete] = useState(false),
     [resetOpen, setResetOpen] = useState(false),
     [confirmReset, setConfirmReset] = useState(false),
+    [authChecked, setAuthChecked] = useState(false),
     [cloudUser, setCloudUser] = useState<User | null>(null),
     [profiles, setProfiles] = useState<ChildProfile[]>([]),
     [activeProfileId, setActiveProfileId] = useState<string | null>(null),
@@ -161,11 +162,18 @@ export function GameClient() {
   }, [ready, save.player.name]);
   useEffect(() => {
     const cloud = getCloudClient();
-    if (!cloud) return;
-    cloud.auth.getUser().then(({ data }) => setCloudUser(data.user));
-    const { data } = cloud.auth.onAuthStateChange((_event, session) =>
-      setCloudUser(session?.user ?? null),
-    );
+    if (!cloud) {
+      setAuthChecked(true);
+      return;
+    }
+    cloud.auth.getUser().then(({ data }) => {
+      setCloudUser(data.user);
+      setAuthChecked(true);
+    });
+    const { data } = cloud.auth.onAuthStateChange((_event, session) => {
+      setCloudUser(session?.user ?? null);
+      setAuthChecked(true);
+    });
     return () => data.subscription.unsubscribe();
   }, []);
   useEffect(() => {
@@ -182,6 +190,28 @@ export function GameClient() {
       .then(({ data, error }) => {
         if (error) return setCloudMessage(error.message);
         const rows = (data ?? []) as ChildProfile[];
+        if (!rows.length) {
+          const local = loadSave();
+          cloud
+            .from('child_profiles')
+            .insert({
+              parent_id: cloudUser.id,
+              name: local.player.name || 'Child',
+              save_data: local,
+            })
+            .select('*')
+            .single()
+            .then(({ data: created, error: createError }) => {
+              if (createError) return setCloudMessage(createError.message);
+              const profile = created as ChildProfile;
+              setProfiles([profile]);
+              setSave(profile.save_data);
+              setActiveProfileId(profile.id);
+              localStorage.setItem('lara-active-cloud-profile', profile.id);
+              setCloudMessage('Your child profile is saved to the cloud ✓');
+            });
+          return;
+        }
         setProfiles(rows);
         const remembered = localStorage.getItem('lara-active-cloud-profile');
         const chosen = rows.find((p) => p.id === remembered) ?? rows[0];
@@ -437,13 +467,15 @@ export function GameClient() {
       });
     r.readAsDataURL(f);
   };
-  if (!ready)
+  if (!ready || !authChecked)
     return (
       <main className="loading">
         <div>✨</div>
         <h1>Opening Magical Mathventure...</h1>
       </main>
     );
+  if (getCloudClient() && !cloudUser)
+    return <LoginGate authenticate={authenticate} message={cloudMessage} />;
   return (
     <main className="app-shell">
       <div className="sky-decor" aria-hidden>
@@ -636,6 +668,69 @@ export function GameClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </main>
+  );
+}
+function LoginGate({
+  authenticate,
+  message,
+}: {
+  authenticate: (
+    email: string,
+    password: string,
+    register: boolean,
+  ) => Promise<void>;
+  message: string;
+}) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  return (
+    <main className="login-page">
+      <section className="login-card">
+        <div className="login-mark">🧠</div>
+        <p className="eyebrow">Welcome to</p>
+        <h1>Magical Mathventure</h1>
+        <p>Sign in to continue your child’s learning adventure.</p>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void authenticate(email.trim(), password, false);
+          }}
+        >
+          <label>
+            Parent email
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="email"
+              required
+            />
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              minLength={8}
+              required
+            />
+          </label>
+          <button className="magic-button" type="submit">
+            Sign In
+          </button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void authenticate(email.trim(), password, true)}
+          >
+            Create Parent Account
+          </Button>
+        </form>
+        {message && <p className="cloud-message">{message}</p>}
+      </section>
     </main>
   );
 }
@@ -1354,10 +1449,7 @@ function AccountView({
   const [childName, setChildName] = useState('Lara');
   const [gcashReference, setGcashReference] = useState('');
   const [payments, setPayments] = useState<Payment[]>([]);
-  const isAdmin =
-    user?.app_metadata.role === 'admin' ||
-    user?.email?.toLowerCase() ===
-      process.env.NEXT_PUBLIC_ADMIN_EMAIL?.toLowerCase();
+  const isAdmin = false;
   const activeSave = activeProfileId ? currentSave : null;
   const subjectSummary = (subject: string) => {
     const matches = (mode: string) =>
@@ -1565,7 +1657,7 @@ function AccountView({
               )}
             </section>
           )}
-          <h2>Children</h2>
+          <h2>Child profile</h2>
           <div className="child-grid">
             {profiles.map((profile) => (
               <button
@@ -1601,26 +1693,6 @@ function AccountView({
               )}
             </div>
           )}
-          <form
-            className="add-child"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void createProfile(childName);
-            }}
-          >
-            <label>
-              Child’s name
-              <input
-                value={childName}
-                onChange={(e) => setChildName(e.target.value)}
-                required
-                maxLength={50}
-              />
-            </label>
-            <Button type="submit">
-              Add Child & Upload This Device’s Progress
-            </Button>
-          </form>
         </div>
       )}
       {message && (
