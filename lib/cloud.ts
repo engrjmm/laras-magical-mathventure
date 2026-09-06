@@ -4,6 +4,7 @@ import type { SaveData } from './storage';
 export type ChildProfile = {
   id: string;
   parent_id: string;
+  parent_email?: string;
   name: string;
   save_data: SaveData;
   updated_at: string;

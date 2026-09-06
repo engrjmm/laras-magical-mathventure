@@ -196,6 +196,7 @@ export function GameClient() {
             .from('child_profiles')
             .insert({
               parent_id: cloudUser.id,
+              parent_email: cloudUser.email,
               name: local.player.name || 'Child',
               save_data: local,
             })
@@ -237,6 +238,7 @@ export function GameClient() {
         .from('child_profiles')
         .update({
           name: save.player.name,
+          parent_email: cloudUser.email,
           save_data: { ...save, question: q },
           updated_at: new Date().toISOString(),
         })
@@ -418,6 +420,7 @@ export function GameClient() {
       .from('child_profiles')
       .insert({
         parent_id: cloudUser.id,
+        parent_email: cloudUser.email,
         name: name.trim(),
         save_data: { ...childSave, question: q },
       })
@@ -1441,6 +1444,7 @@ function AccountView({
     parent_id: string;
     amount: number;
     gcash_reference: string;
+    receipt_path: string | null;
     status: 'pending' | 'approved' | 'rejected';
     submitted_at: string;
   };
@@ -1448,6 +1452,7 @@ function AccountView({
   const [password, setPassword] = useState('');
   const [childName, setChildName] = useState('Lara');
   const [gcashReference, setGcashReference] = useState('');
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const isAdmin = false;
   const activeSave = activeProfileId ? currentSave : null;
@@ -1492,14 +1497,22 @@ function AccountView({
   const submitPayment = async (event: FormEvent) => {
     event.preventDefault();
     const cloud = getCloudClient();
-    if (!cloud || !user) return;
+    if (!cloud || !user || !receiptFile) return;
+    const extension = receiptFile.name.split('.').pop()?.toLowerCase() ?? 'jpg';
+    const receiptPath = `${user.id}/${crypto.randomUUID()}.${extension}`;
+    const upload = await cloud.storage
+      .from('payment-receipts')
+      .upload(receiptPath, receiptFile, { contentType: receiptFile.type });
+    if (upload.error) return;
     const { error } = await cloud.from('subscription_payments').insert({
       parent_id: user.id,
       amount: 300,
       gcash_reference: gcashReference.trim(),
+      receipt_path: receiptPath,
     });
     if (!error) {
       setGcashReference('');
+      setReceiptFile(null);
       await refreshPayments();
     }
   };
@@ -1648,6 +1661,17 @@ function AccountView({
                   maxLength={40}
                   required
                 />
+                <label className="receipt-upload">
+                  Payment screenshot
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(event) =>
+                      setReceiptFile(event.target.files?.[0] ?? null)
+                    }
+                    required
+                  />
+                </label>
                 <Button type="submit">Submit Payment</Button>
               </form>
               {payments[0] && (
