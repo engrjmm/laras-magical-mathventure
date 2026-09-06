@@ -30,3 +30,34 @@ using ((select auth.uid()) = parent_id);
 
 create index if not exists child_profiles_parent_id_idx
 on public.child_profiles(parent_id);
+
+create table if not exists public.subscription_payments (
+  id uuid primary key default gen_random_uuid(),
+  parent_id uuid not null references auth.users(id) on delete cascade,
+  amount integer not null default 300 check (amount = 300),
+  gcash_reference text not null check (char_length(gcash_reference) between 6 and 40),
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  submitted_at timestamptz not null default now(),
+  reviewed_at timestamptz
+);
+
+alter table public.subscription_payments enable row level security;
+revoke all on public.subscription_payments from anon;
+grant select, insert on public.subscription_payments to authenticated;
+
+create policy "Parents can view their payments"
+on public.subscription_payments for select to authenticated
+using ((select auth.uid()) = parent_id or (select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+
+create policy "Parents can submit their payments"
+on public.subscription_payments for insert to authenticated
+with check ((select auth.uid()) = parent_id and status = 'pending' and amount = 300);
+
+create policy "Admins can update payment reviews"
+on public.subscription_payments for update to authenticated
+using ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
+with check ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+
+grant update on public.subscription_payments to authenticated;
+create index if not exists subscription_payments_parent_id_idx
+on public.subscription_payments(parent_id);

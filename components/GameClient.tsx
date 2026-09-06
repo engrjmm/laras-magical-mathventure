@@ -154,6 +154,12 @@ export function GameClient() {
     if (ready) storeSave({ ...save, question: q });
   }, [save, q, ready]);
   useEffect(() => {
+    if (ready)
+      document.title = save.player.name
+        ? `${save.player.name}'s Magical Mathventure`
+        : 'Magical Mathventure';
+  }, [ready, save.player.name]);
+  useEffect(() => {
     const cloud = getCloudClient();
     if (!cloud) return;
     cloud.auth.getUser().then(({ data }) => setCloudUser(data.user));
@@ -431,7 +437,7 @@ export function GameClient() {
     return (
       <main className="loading">
         <div>✨</div>
-        <h1>Opening Lara’s magical world...</h1>
+        <h1>Opening Magical Mathventure...</h1>
       </main>
     );
   return (
@@ -441,7 +447,10 @@ export function GameClient() {
       </div>
       <header className="topbar">
         <button onClick={() => setView('home')} className="brand">
-          Lara’s Magical Mathventure <span>✨</span>
+          {save.player.name
+            ? `${save.player.name}'s Magical Mathventure`
+            : 'Magical Mathventure'}{' '}
+          <span>✨</span>
           <small>Add • Subtract • Multiply • Divide • Collect</small>
         </button>
         <div className="top-stats">
@@ -663,7 +672,7 @@ function HomeView({ save, go }: { save: SaveData; go: (v: View) => void }) {
           )}
         </div>
         <div className="hero-copy">
-          <p className="eyebrow">Welcome back, Lara! 💖</p>
+          <p className="eyebrow">Welcome back, {save.player.name}! 💖</p>
           <h1>Your next little wonder is waiting.</h1>
           <div className="adventure-card">
             <b>🌸 ADVENTURE #{save.adventure.number}</b>
@@ -708,7 +717,7 @@ function HomeView({ save, go }: { save: SaveData; go: (v: View) => void }) {
           [Gift, 'Treasure Book', 'treasures'],
           [Shirt, 'My Closet', 'closet'],
           [Star, 'Adventure Buddy', 'buddy'],
-          [BookOpen, 'Lara’s Profile', 'profile'],
+          [BookOpen, `${save.player.name}'s Profile`, 'profile'],
           [UserRound, 'Parent Account', 'account'],
           [Settings, 'Settings', 'settings'],
         ].map(([Icon, label, to], i) => {
@@ -1222,7 +1231,7 @@ function Profile({ save, back }: { save: SaveData; back: () => void }) {
       <div className="profile-head">
         <Avatar save={save} />
         <div>
-          <p className="eyebrow">Lara’s Profile 💖</p>
+          <p className="eyebrow">{save.player.name}&apos;s Profile 💖</p>
           <h1>Magical Math Explorer</h1>
           <p>
             Adventure #{save.adventure.number} · {save.adventure.world}
@@ -1290,9 +1299,22 @@ function AccountView({
   selectProfile: (profile: ChildProfile) => void;
   signOut: () => Promise<void>;
 }) {
+  type Payment = {
+    id: string;
+    parent_id: string;
+    amount: number;
+    gcash_reference: string;
+    status: 'pending' | 'approved' | 'rejected';
+    submitted_at: string;
+  };
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [childName, setChildName] = useState('Lara');
+  const [gcashReference, setGcashReference] = useState('');
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const isAdmin = user?.app_metadata.role === 'admin';
+  const gcashName = process.env.NEXT_PUBLIC_GCASH_NAME;
+  const gcashNumber = process.env.NEXT_PUBLIC_GCASH_NUMBER;
   const activeSave = activeProfileId ? currentSave : null;
   const subjectSummary = (subject: string) => {
     const matches = (mode: string) =>
@@ -1319,6 +1341,41 @@ function AccountView({
   const submit = (event: FormEvent, register: boolean) => {
     event.preventDefault();
     void authenticate(email.trim(), password, register);
+  };
+  const refreshPayments = async () => {
+    const cloud = getCloudClient();
+    if (!cloud || !user) return;
+    const { data } = await cloud
+      .from('subscription_payments')
+      .select('*')
+      .order('submitted_at', { ascending: false });
+    setPayments((data ?? []) as Payment[]);
+  };
+  useEffect(() => {
+    void refreshPayments();
+  }, [user?.id]);
+  const submitPayment = async (event: FormEvent) => {
+    event.preventDefault();
+    const cloud = getCloudClient();
+    if (!cloud || !user) return;
+    const { error } = await cloud.from('subscription_payments').insert({
+      parent_id: user.id,
+      amount: 300,
+      gcash_reference: gcashReference.trim(),
+    });
+    if (!error) {
+      setGcashReference('');
+      await refreshPayments();
+    }
+  };
+  const reviewPayment = async (id: string, status: 'approved' | 'rejected') => {
+    const cloud = getCloudClient();
+    if (!cloud || !isAdmin) return;
+    await cloud
+      .from('subscription_payments')
+      .update({ status, reviewed_at: new Date().toISOString() })
+      .eq('id', id);
+    await refreshPayments();
   };
   return (
     <section className="page inner-page account-page">
@@ -1392,6 +1449,84 @@ function AccountView({
               Sign Out
             </Button>
           </div>
+          {isAdmin ? (
+            <section className="admin-dashboard">
+              <p className="eyebrow">Administrator dashboard</p>
+              <h2>GCash payment reviews</h2>
+              {payments.length ? (
+                <div className="payment-list">
+                  {payments.map((payment) => (
+                    <div key={payment.id}>
+                      <span>
+                        <b>₱{payment.amount}</b>
+                        <small>{payment.gcash_reference}</small>
+                      </span>
+                      <strong data-status={payment.status}>
+                        {payment.status}
+                      </strong>
+                      {payment.status === 'pending' && (
+                        <span className="review-actions">
+                          <button
+                            onClick={() =>
+                              void reviewPayment(payment.id, 'approved')
+                            }
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() =>
+                              void reviewPayment(payment.id, 'rejected')
+                            }
+                          >
+                            Reject
+                          </button>
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p>No payments waiting for review.</p>
+              )}
+            </section>
+          ) : (
+            <section className="subscription-card">
+              <div>
+                <p className="eyebrow">Family subscription</p>
+                <h2>₱300 per month</h2>
+              </div>
+              {gcashName && gcashNumber ? (
+                <>
+                  <p>
+                    Send ₱300 through GCash to <b>{gcashName}</b> at{' '}
+                    <b>{gcashNumber}</b>, then enter the receipt reference
+                    number.
+                  </p>
+                  <form onSubmit={submitPayment}>
+                    <input
+                      value={gcashReference}
+                      onChange={(e) => setGcashReference(e.target.value)}
+                      placeholder="GCash reference number"
+                      minLength={6}
+                      maxLength={40}
+                      required
+                    />
+                    <Button type="submit">Submit Payment</Button>
+                  </form>
+                </>
+              ) : (
+                <p>
+                  GCash payment details will appear here after the administrator
+                  configures the receiving account.
+                </p>
+              )}
+              {payments[0] && (
+                <p className="payment-status">
+                  Latest payment: <b>{payments[0].status}</b>
+                </p>
+              )}
+            </section>
+          )}
           <h2>Children</h2>
           <div className="child-grid">
             {profiles.map((profile) => (

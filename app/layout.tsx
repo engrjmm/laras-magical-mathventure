@@ -13,17 +13,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://laras-magical-mathventure.joycemalasa062897.chatgpt.site'),
-  title: 'Lara’s Magical Mathventure',
-  description: 'Add, subtract, multiply, divide, explore magical worlds, and collect delightful treasures with Lara.',
+  metadataBase: new URL('https://magical-mathventure.vercel.app'),
+  title: 'Magical Mathventure',
+  description:
+    'Add, subtract, multiply, divide, explore magical worlds, and collect delightful treasures with Lara.',
   openGraph: {
-    title: 'Lara’s Magical Mathventure',
+    title: 'Magical Mathventure',
     description: 'Multiply • Explore • Collect',
     images: ['/og.png'],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Lara’s Magical Mathventure',
+    title: 'Magical Mathventure',
     description: 'Multiply • Explore • Collect',
     images: ['/og.png'],
   },
