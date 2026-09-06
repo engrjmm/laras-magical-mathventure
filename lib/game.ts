@@ -1,13 +1,18 @@
 export const MODES = {
-  ADDITION: 'addition',
-  SUBTRACTION: 'subtraction',
+  ADDITION_EASY: 'addition-easy',
+  ADDITION_MEDIUM: 'addition-medium',
+  ADDITION_HARD: 'addition-hard',
+  SUBTRACTION_EASY: 'subtraction-easy',
+  SUBTRACTION_MEDIUM: 'subtraction-medium',
+  SUBTRACTION_HARD: 'subtraction-hard',
   TABLE: 'table',
   TWO_BY_ONE: '2x1',
   THREE_BY_ONE: '3x1',
   TWO_BY_TWO: '2x2',
   THREE_BY_TWO: '3x2',
   DIVISION_TABLE: 'division-table',
-  DIVISION: 'division',
+  DIVISION_MEDIUM: 'division-medium',
+  DIVISION_HARD: 'division-hard',
 } as const;
 export type Mode = (typeof MODES)[keyof typeof MODES];
 export type Operator = '+' | '−' | '×' | '÷';
@@ -27,70 +32,120 @@ export const MODE_INFO: Record<
     note: string;
     workspace: boolean;
     subject: string;
+    difficulty: 'easy' | 'medium' | 'hard';
   }
 > = {
-  addition: {
-    name: 'Addition Adventures',
+  'addition-easy': {
+    name: 'Easy',
+    icon: '🌱',
+    note: 'Add numbers through 20',
+    workspace: false,
+    subject: 'Addition',
+    difficulty: 'easy',
+  },
+  'addition-medium': {
+    name: 'Medium',
     icon: '🌈',
-    note: 'Add 1–3 digit numbers',
+    note: 'Add 2-digit numbers',
     workspace: true,
     subject: 'Addition',
+    difficulty: 'medium',
   },
-  subtraction: {
-    name: 'Subtraction Adventures',
+  'addition-hard': {
+    name: 'Hard',
+    icon: '✨',
+    note: 'Add 3-digit numbers with carrying',
+    workspace: true,
+    subject: 'Addition',
+    difficulty: 'hard',
+  },
+  'subtraction-easy': {
+    name: 'Easy',
+    icon: '🌱',
+    note: 'Subtract numbers through 20',
+    workspace: false,
+    subject: 'Subtraction',
+    difficulty: 'easy',
+  },
+  'subtraction-medium': {
+    name: 'Medium',
     icon: '🌙',
-    note: 'Subtract with confidence',
+    note: 'Subtract 2-digit numbers',
     workspace: true,
     subject: 'Subtraction',
+    difficulty: 'medium',
+  },
+  'subtraction-hard': {
+    name: 'Hard',
+    icon: '⭐',
+    note: 'Subtract 3-digit numbers with regrouping',
+    workspace: true,
+    subject: 'Subtraction',
+    difficulty: 'hard',
   },
   table: {
-    name: 'Multiplication Tables',
+    name: 'Table Facts',
     icon: '🌱',
     note: 'Facts from 1 to 10',
     workspace: false,
     subject: 'Multiplication',
+    difficulty: 'easy',
   },
   '2x1': {
-    name: '2-Digit × 1-Digit',
+    name: 'Easy · 2 × 1',
     icon: '🌸',
-    note: 'A gentle next step',
+    note: '2-digit by 1-digit',
     workspace: true,
     subject: 'Multiplication',
+    difficulty: 'easy',
   },
   '3x1': {
-    name: '3-Digit × 1-Digit',
+    name: 'Medium · 3 × 1',
     icon: '⭐',
-    note: 'Bigger numbers, same magic',
+    note: '3-digit by 1-digit',
     workspace: true,
     subject: 'Multiplication',
+    difficulty: 'medium',
   },
   '2x2': {
-    name: '2-Digit × 2-Digit',
+    name: 'Medium · 2 × 2',
     icon: '🦄',
     note: 'Practice partial products',
     workspace: true,
     subject: 'Multiplication',
+    difficulty: 'medium',
   },
   '3x2': {
-    name: '3-Digit × 2-Digit',
+    name: 'Hard · 3 × 2',
     icon: '👑',
     note: 'A royal challenge',
     workspace: true,
     subject: 'Multiplication',
+    difficulty: 'hard',
   },
   'division-table': {
-    name: 'Division Facts',
+    name: 'Easy',
     icon: '🍓',
     note: 'Whole-number facts through 10',
     workspace: false,
     subject: 'Division',
+    difficulty: 'easy',
   },
-  division: {
-    name: 'Division Workspace',
+  'division-medium': {
+    name: 'Medium',
     icon: '💎',
-    note: '2–3 digit whole-number division',
+    note: '2-digit whole-number division',
     workspace: true,
     subject: 'Division',
+    difficulty: 'medium',
+  },
+  'division-hard': {
+    name: 'Hard',
+    icon: '👑',
+    note: '3-digit whole-number division',
+    workspace: true,
+    subject: 'Division',
+    difficulty: 'hard',
   },
 };
 export const WORLDS = [
@@ -207,14 +262,33 @@ export function makeQuestion(
     answer = 4,
     operator: Operator = '×';
   for (let i = 0; i < 8; i++) {
-    if (mode === 'addition') {
-      a = rand(10, 999);
-      b = rand(10, 999);
+    if (mode.startsWith('addition')) {
+      const range =
+        mode === 'addition-easy'
+          ? [1, 20]
+          : mode === 'addition-medium'
+            ? [10, 99]
+            : [100, 999];
+      a = rand(range[0], range[1]);
+      b = rand(range[0], range[1]);
       operator = '+';
       answer = a + b;
-    } else if (mode === 'subtraction') {
-      a = rand(20, 999);
-      b = rand(10, a);
+    } else if (mode.startsWith('subtraction')) {
+      const max =
+        mode === 'subtraction-easy'
+          ? 20
+          : mode === 'subtraction-medium'
+            ? 99
+            : 999;
+      a = rand(
+        mode === 'subtraction-easy'
+          ? 2
+          : mode === 'subtraction-medium'
+            ? 20
+            : 100,
+        max,
+      );
+      b = rand(1, a);
       operator = '−';
       answer = a - b;
     } else if (mode === 'table') {
@@ -243,8 +317,8 @@ export function makeQuestion(
       a = b * answer;
       operator = '÷';
     } else {
-      b = rand(2, 12);
-      answer = rand(10, 99);
+      b = rand(2, mode === 'division-hard' ? 20 : 12);
+      answer = rand(10, mode === 'division-hard' ? 99 : 40);
       a = b * answer;
       operator = '÷';
     }
@@ -284,10 +358,22 @@ export function hintFor(q: Question, attempt: number) {
       ? `Now remember that the ${tens} in ${q.b} means ${tens * 10}.`
       : `Find ${q.a} × ${tens * 10}, then add your two partial answers.`;
 }
-export function pickTreasure() {
+export function pickTreasure(difficulty: 'easy' | 'medium' | 'hard' = 'easy') {
   const n = Math.random() * 100,
     rarity =
-      n < 2 ? 'Legendary' : n < 12 ? 'Super Rare' : n < 38 ? 'Rare' : 'Common',
+      difficulty === 'easy'
+        ? 'Common'
+        : difficulty === 'medium'
+          ? n < 18
+            ? 'Rare'
+            : 'Common'
+          : n < 3
+            ? 'Legendary'
+            : n < 15
+              ? 'Super Rare'
+              : n < 42
+                ? 'Rare'
+                : 'Common',
     pool = TREASURES.filter((t) => t.rarity === rarity);
   return pool[rand(0, pool.length - 1)];
 }

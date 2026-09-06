@@ -97,6 +97,14 @@ const buddies = [
     Seal: '🦭',
     Owl: '🦉',
   };
+const BUDDY_THRESHOLDS = buddies.map((name, index) => ({
+  name,
+  score: index === 0 ? 0 : index * 25,
+}));
+const buddiesForScore = (score: number) =>
+  BUDDY_THRESHOLDS.filter((buddy) => score >= buddy.score).map(
+    (buddy) => buddy.name,
+  );
 const accessories = [
     'Pretty Bow',
     'Princess Crown',
@@ -184,6 +192,9 @@ export function GameClient() {
       done = false;
     update((s) => {
       s.player.totalCorrect++;
+      s.customization.unlockedCompanions = buddiesForScore(
+        s.player.totalCorrect,
+      );
       s.player.problemsSolved++;
       s.player.currentStreak++;
       s.player.bestStreak = Math.max(
@@ -214,7 +225,7 @@ export function GameClient() {
     setTimeout(
       () =>
         showReward
-          ? setReward(pickTreasure())
+          ? setReward(pickTreasure(MODE_INFO[save.practice.mode].difficulty))
           : done
             ? setComplete(true)
             : next(),
@@ -231,11 +242,6 @@ export function GameClient() {
         !s.customization.unlockedAccessories.includes('Princess Crown')
       )
         s.customization.unlockedAccessories.push('Princess Crown');
-      if (
-        reward.name.includes('Unicorn') &&
-        !s.customization.unlockedCompanions.includes('Unicorn')
-      )
-        s.customization.unlockedCompanions.push('Unicorn');
       return s;
     });
     setReward(null);
@@ -255,6 +261,9 @@ export function GameClient() {
   const recordTableList = (correct: number, total: number) => {
     update((s) => {
       s.player.totalCorrect += correct;
+      s.customization.unlockedCompanions = buddiesForScore(
+        s.player.totalCorrect,
+      );
       s.player.problemsSolved += total;
       s.player.currentStreak =
         correct === total ? s.player.currentStreak + correct : 0;
@@ -605,26 +614,52 @@ function Modes({
           <p>Every adventure is open, Lara. Take all the time you need.</p>
         </div>
       </div>
-      <div className="mode-grid">
-        {Object.entries(MODE_INFO).map(([key, m]) => (
-          <button key={key} onClick={() => choose(key as Mode)}>
-            <span>{m.icon}</span>
-            <div>
-              <h2>{m.name}</h2>
-              <p>{m.note}</p>
+      <div className="subject-sections">
+        {[
+          ['Addition', '🌈'],
+          ['Subtraction', '🌙'],
+          ['Multiplication', '🦄'],
+          ['Division', '💎'],
+        ].map(([subject, icon]) => (
+          <section className="subject-card" key={subject}>
+            <div className="subject-title">
+              <span>{icon}</span>
+              <div>
+                <h2>{subject}</h2>
+                <p>Choose a level and start exploring.</p>
+              </div>
             </div>
-            <ChevronRight />
-          </button>
+            <div className="mode-grid">
+              {Object.entries(MODE_INFO)
+                .filter(([, m]) => m.subject === subject)
+                .map(([key, m]) => (
+                  <button
+                    key={key}
+                    data-difficulty={m.difficulty}
+                    onClick={() => choose(key as Mode)}
+                  >
+                    <span>{m.icon}</span>
+                    <div>
+                      <h2>{m.name}</h2>
+                      <p>{m.note}</p>
+                    </div>
+                    <ChevronRight />
+                  </button>
+                ))}
+              {subject === 'Multiplication' && (
+                <button className="table-list-card" onClick={openTableList}>
+                  <span>✍️</span>
+                  <div>
+                    <h2>Written Table List</h2>
+                    <p>Write all ten answers by hand</p>
+                  </div>
+                  <ChevronRight />
+                </button>
+              )}
+            </div>
+          </section>
         ))}
       </div>
-      <button className="table-list-card" onClick={openTableList}>
-        <span>📝</span>
-        <div>
-          <h2>Multiplication Table List</h2>
-          <p>Fill in all ten answers for one table.</p>
-        </div>
-        <ChevronRight />
-      </button>
       <div className="table-picker">
         <div>
           <h2>✨ Pick your tables</h2>
@@ -678,19 +713,12 @@ function TimesTableList({
   record: (correct: number, total: number) => void;
 }) {
   const [table, setTable] = useState(tables[0] ?? 2);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [checked, setChecked] = useState(false);
-  const score = Array.from({ length: 10 }, (_, i) => i + 1).filter(
-    (n) => Number(answers[n]) === table * n,
-  ).length;
-  const check = () => {
-    if (checked) return;
-    setChecked(true);
-    record(score, 10);
-  };
-  const reset = () => {
-    setAnswers({});
-    setChecked(false);
+  const [showKey, setShowKey] = useState(false);
+  const [recordedScore, setRecordedScore] = useState<number | null>(null);
+  const reset = (nextTable = table) => {
+    setTable(nextTable);
+    setShowKey(false);
+    setRecordedScore(null);
   };
   return (
     <section className="page inner-page table-list-page">
@@ -702,7 +730,9 @@ function TimesTableList({
         <div>
           <p className="eyebrow">Multiplication practice</p>
           <h1>Table List Challenge</h1>
-          <p>Complete every fact, then check your list.</p>
+          <p>
+            Write every answer by hand, then use the answer key to self-check.
+          </p>
         </div>
       </div>
       <div className="list-table-picker">
@@ -710,63 +740,61 @@ function TimesTableList({
           <button
             key={n}
             className={table === n ? 'selected' : ''}
-            onClick={() => {
-              setTable(n);
-              reset();
-            }}
+            onClick={() => reset(n)}
           >
             ×{n}
           </button>
         ))}
       </div>
-      <div className="times-list">
-        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
-          const correct = Number(answers[n]) === table * n;
-          return (
-            <label
-              key={n}
-              className={checked ? (correct ? 'correct' : 'try-again') : ''}
-            >
-              <span>
-                {table} × {n} =
-              </span>
-              <input
-                aria-label={`${table} times ${n}`}
-                inputMode="numeric"
-                value={answers[n] ?? ''}
-                onChange={(e) => {
-                  if (!checked)
-                    setAnswers((a) => ({
-                      ...a,
-                      [n]: e.target.value.replace(/\D/g, ''),
-                    }));
-                }}
-              />
-              {checked && <b>{correct ? '✓' : `→ ${table * n}`}</b>}
-            </label>
-          );
-        })}
-      </div>
-      {checked ? (
-        <div className="list-result">
-          <strong>{score}/10</strong>
-          <span>
-            {score === 10
-              ? 'Perfect table magic! ✨'
-              : 'Lovely effort! Review the answers and try a fresh list. 🌸'}
-          </span>
-          <button className="magic-button" onClick={reset}>
-            Try This Table Again
-          </button>
-        </div>
-      ) : (
+      <DrawingCanvas
+        worksheetTable={table}
+        large
+        resetKey={`table-list-${table}-${recordedScore ?? 'new'}`}
+      />
+      {!showKey ? (
         <button
           className="magic-button check-list"
-          onClick={check}
-          disabled={Object.keys(answers).length < 10}
+          onClick={() => setShowKey(true)}
         >
-          ✨ Check My Table
+          ✨ Show Answer Key
         </button>
+      ) : (
+        <div className="written-check">
+          <h2>Answer key</h2>
+          <div>
+            {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+              <span key={n}>
+                {table} × {n} = <b>{table * n}</b>
+              </span>
+            ))}
+          </div>
+          {recordedScore === null ? (
+            <>
+              <p>Compare your handwriting. How many did you get right?</p>
+              <div className="self-score">
+                {Array.from({ length: 11 }, (_, i) => i).map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => {
+                      setRecordedScore(n);
+                      record(n, 10);
+                    }}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="list-result">
+              <strong>{recordedScore}/10</strong>
+              <span>Score saved! Wonderful honest checking, Lara. 💖</span>
+              <button className="magic-button" onClick={() => reset()}>
+                Try This Table Again
+              </button>
+            </div>
+          )}
+        </div>
       )}
     </section>
   );
@@ -949,7 +977,7 @@ function Buddy({
     <Picker
       title="My Adventure Buddy"
       icon="💖"
-      note="Pick a friend to join the journey."
+      note="Earn correct answers to unlock each new friend."
       back={back}
       preview={
         <div className="buddy-preview">
@@ -962,7 +990,10 @@ function Buddy({
         </div>
       }
       items={buddies}
-      unlocked={save.customization.unlockedCompanions}
+      unlocked={buddiesForScore(save.player.totalCorrect)}
+      unlockScores={Object.fromEntries(
+        BUDDY_THRESHOLDS.map((b) => [b.name, b.score]),
+      )}
       selected={save.customization.selectedCompanion}
       icons={buddyIcon}
       choose={(x) =>
@@ -982,6 +1013,7 @@ function Picker({
   preview,
   items,
   unlocked,
+  unlockScores,
   selected,
   icons,
   choose,
@@ -993,6 +1025,7 @@ function Picker({
   preview: React.ReactNode;
   items: string[];
   unlocked: string[];
+  unlockScores?: Record<string, number>;
   selected: string | null;
   icons: Record<string, string>;
   choose: (x: string) => void;
@@ -1029,7 +1062,9 @@ function Picker({
                     ? selected === x
                       ? 'Equipped'
                       : 'Tap to choose'
-                    : 'Find this treasure'}
+                    : unlockScores?.[x] !== undefined
+                      ? `Unlock at ${unlockScores[x]} correct`
+                      : 'Find this treasure'}
                 </small>
                 {selected === x && <Check />}
               </button>

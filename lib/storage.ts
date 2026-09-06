@@ -37,7 +37,7 @@ export type SaveData = {
   question?: Question;
 };
 export const DEFAULT_SAVE: SaveData = {
-  version: 2,
+  version: 3,
   player: {
     name: 'Lara',
     avatarType: 'default',
@@ -62,7 +62,22 @@ export const DEFAULT_SAVE: SaveData = {
   customization: {
     unlockedAccessories: ['Pretty Bow'],
     equippedAccessory: 'Pretty Bow',
-    unlockedCompanions: [
+    unlockedCompanions: ['Bunny'],
+    selectedCompanion: 'Bunny',
+  },
+  settings: { soundEffects: true, music: true },
+};
+const num = (v: unknown, d: number, max = 999999) =>
+  typeof v === 'number' && Number.isFinite(v)
+    ? Math.max(0, Math.min(max, Math.floor(v)))
+    : d;
+export function loadSave(): SaveData {
+  try {
+    const raw = localStorage.getItem('lara-mathventure-v1');
+    if (!raw) return structuredClone(DEFAULT_SAVE);
+    const v = JSON.parse(raw);
+    const totalCorrect = num(v.player?.totalCorrect, 0);
+    const buddyNames = [
       'Bunny',
       'Kitty',
       'Panda',
@@ -79,28 +94,23 @@ export const DEFAULT_SAVE: SaveData = {
       'Red Panda',
       'Seal',
       'Owl',
-    ],
-    selectedCompanion: 'Bunny',
-  },
-  settings: { soundEffects: true, music: true },
-};
-const num = (v: unknown, d: number, max = 999999) =>
-  typeof v === 'number' && Number.isFinite(v)
-    ? Math.max(0, Math.min(max, Math.floor(v)))
-    : d;
-export function loadSave(): SaveData {
-  try {
-    const raw = localStorage.getItem('lara-mathventure-v1');
-    if (!raw) return structuredClone(DEFAULT_SAVE);
-    const v = JSON.parse(raw);
+    ];
+    const earnedBuddies = buddyNames.filter(
+      (_, index) => totalCorrect >= (index === 0 ? 0 : index * 25),
+    );
+    const selectedBuddy = earnedBuddies.includes(
+      v.customization?.selectedCompanion,
+    )
+      ? v.customization.selectedCompanion
+      : 'Bunny';
     return {
       ...structuredClone(DEFAULT_SAVE),
       ...v,
-      version: 2,
+      version: 3,
       player: {
         ...DEFAULT_SAVE.player,
         ...v.player,
-        totalCorrect: num(v.player?.totalCorrect, 0),
+        totalCorrect,
         currentStreak: num(v.player?.currentStreak, 0),
         bestStreak: num(v.player?.bestStreak, 0),
         problemsSolved: num(v.player?.problemsSolved, 0),
@@ -111,15 +121,20 @@ export function loadSave(): SaveData {
         mode:
           typeof v.practice?.mode === 'string' &&
           [
-            'addition',
-            'subtraction',
+            'addition-easy',
+            'addition-medium',
+            'addition-hard',
+            'subtraction-easy',
+            'subtraction-medium',
+            'subtraction-hard',
             'table',
             '2x1',
             '3x1',
             '2x2',
             '3x2',
             'division-table',
-            'division',
+            'division-medium',
+            'division-hard',
           ].includes(v.practice.mode)
             ? v.practice.mode
             : DEFAULT_SAVE.practice.mode,
@@ -140,14 +155,8 @@ export function loadSave(): SaveData {
       customization: {
         ...DEFAULT_SAVE.customization,
         ...v.customization,
-        unlockedCompanions: Array.from(
-          new Set([
-            ...DEFAULT_SAVE.customization.unlockedCompanions,
-            ...(Array.isArray(v.customization?.unlockedCompanions)
-              ? v.customization.unlockedCompanions
-              : []),
-          ]),
-        ),
+        unlockedCompanions: earnedBuddies,
+        selectedCompanion: selectedBuddy,
       },
       settings: { ...DEFAULT_SAVE.settings, ...v.settings },
       question:

@@ -5,12 +5,14 @@ export function DrawingCanvas({
   a,
   b,
   operator,
+  worksheetTable,
   large = false,
   resetKey,
 }: {
-  a: number;
-  b: number;
-  operator: '+' | '−' | '×' | '÷';
+  a?: number;
+  b?: number;
+  operator?: '+' | '−' | '×' | '÷';
+  worksheetTable?: number;
   large?: boolean;
   resetKey: string;
 }) {
@@ -127,16 +129,29 @@ export function DrawingCanvas({
         </button>
       </div>
       <div className="notebook-paper">
-        <div
-          className="vertical-problem notebook-problem"
-          aria-label={`${a} ${operator} ${b}`}
-        >
-          <span>{a}</span>
-          <span>
-            {operator} {b}
-          </span>
-          <hr />
-        </div>
+        {worksheetTable ? (
+          <div
+            className="handwritten-table-template"
+            aria-label={`${worksheetTable} multiplication table worksheet`}
+          >
+            {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+              <span key={n}>
+                {worksheetTable} × {n} =
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div
+            className="vertical-problem notebook-problem"
+            aria-label={`${a} ${operator} ${b}`}
+          >
+            <span>{a}</span>
+            <span>
+              {operator} {b}
+            </span>
+            <hr />
+          </div>
+        )}
         <canvas
           aria-label="Digital notebook. Continue writing your working solution below the given problem."
           ref={ref}
