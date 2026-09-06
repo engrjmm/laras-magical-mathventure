@@ -25,7 +25,10 @@ export function AdminDashboard() {
     [payments, setPayments] = useState<Payment[]>([]),
     [clients, setClients] = useState<ChildProfile[]>([]),
     [tab, setTab] = useState<Tab>('overview'),
-    [message, setMessage] = useState('');
+    [message, setMessage] = useState(''),
+    [currentAdminPassword, setCurrentAdminPassword] = useState(''),
+    [newAdminPassword, setNewAdminPassword] = useState(''),
+    [confirmAdminPassword, setConfirmAdminPassword] = useState('');
   const isAdmin =
     user?.email?.toLowerCase() ===
     process.env.NEXT_PUBLIC_ADMIN_EMAIL?.toLowerCase();
@@ -83,6 +86,37 @@ export function AdminDashboard() {
       .eq('id', id);
     if (error) setMessage(error.message);
     else await refresh();
+  };
+  const changeAdminPassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const cloud = getCloudClient();
+    if (!cloud || !user?.email || !isAdmin) return;
+    if (newAdminPassword !== confirmAdminPassword) {
+      setMessage('The new passwords do not match.');
+      return;
+    }
+    if (newAdminPassword.length < 8) {
+      setMessage('The new password must contain at least 8 characters.');
+      return;
+    }
+    const login = await cloud.auth.signInWithPassword({
+      email: user.email,
+      password: currentAdminPassword,
+    });
+    if (login.error) {
+      setMessage('The current password is incorrect.');
+      return;
+    }
+    const { error } = await cloud.auth.updateUser({
+      password: newAdminPassword,
+    });
+    if (error) setMessage(error.message);
+    else {
+      setCurrentAdminPassword('');
+      setNewAdminPassword('');
+      setConfirmAdminPassword('');
+      setMessage('Administrator password changed successfully ✓');
+    }
   };
   if (!checked)
     return (
@@ -247,6 +281,49 @@ export function AdminDashboard() {
                 <input value={user.email ?? ''} readOnly />
               </label>
             </div>
+            <form
+              className="admin-panel password-panel"
+              onSubmit={changeAdminPassword}
+            >
+              <h2>Change admin password</h2>
+              <label>
+                Current password
+                <input
+                  type="password"
+                  value={currentAdminPassword}
+                  onChange={(event) =>
+                    setCurrentAdminPassword(event.target.value)
+                  }
+                  autoComplete="current-password"
+                  required
+                />
+              </label>
+              <label>
+                New password
+                <input
+                  type="password"
+                  value={newAdminPassword}
+                  onChange={(event) => setNewAdminPassword(event.target.value)}
+                  autoComplete="new-password"
+                  minLength={8}
+                  required
+                />
+              </label>
+              <label>
+                Confirm new password
+                <input
+                  type="password"
+                  value={confirmAdminPassword}
+                  onChange={(event) =>
+                    setConfirmAdminPassword(event.target.value)
+                  }
+                  autoComplete="new-password"
+                  minLength={8}
+                  required
+                />
+              </label>
+              <Button type="submit">Update Password</Button>
+            </form>
           </div>
         )}
         {message && <p className="cloud-message">{message}</p>}
