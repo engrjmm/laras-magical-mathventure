@@ -59,6 +59,13 @@ type View =
   | 'profile'
   | 'account'
   | 'settings';
+type SubscriptionPayment = {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  submitted_at: string;
+  reviewed_at: string | null;
+  gcash_reference: string;
+};
 const feedback = [
   'Correct, Lara! 🌟',
   'Amazing work! ✨',
@@ -141,7 +148,11 @@ export function GameClient() {
     [cloudUser, setCloudUser] = useState<User | null>(null),
     [profiles, setProfiles] = useState<ChildProfile[]>([]),
     [activeProfileId, setActiveProfileId] = useState<string | null>(null),
-    [cloudMessage, setCloudMessage] = useState('');
+    [cloudMessage, setCloudMessage] = useState(''),
+    [subscriptionChecked, setSubscriptionChecked] = useState(false),
+    [subscriptionPayments, setSubscriptionPayments] = useState<
+      SubscriptionPayment[]
+    >([]);
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const s = loadSave();
@@ -151,6 +162,25 @@ export function GameClient() {
     );
     setReady(true);
   }, []);
+  const refreshSubscription = async () => {
+    const cloud = getCloudClient();
+    if (!cloud || !cloudUser) {
+      setSubscriptionPayments([]);
+      setSubscriptionChecked(true);
+      return;
+    }
+    const { data, error } = await cloud
+      .from('subscription_payments')
+      .select('id,status,submitted_at,reviewed_at,gcash_reference')
+      .order('submitted_at', { ascending: false });
+    if (error) setCloudMessage(error.message);
+    setSubscriptionPayments((data ?? []) as SubscriptionPayment[]);
+    setSubscriptionChecked(true);
+  };
+  useEffect(() => {
+    setSubscriptionChecked(false);
+    void refreshSubscription();
+  }, [cloudUser?.id]);
   useEffect(() => {
     if (ready) storeSave({ ...save, question: q });
   }, [save, q, ready]);
@@ -470,7 +500,7 @@ export function GameClient() {
       });
     r.readAsDataURL(f);
   };
-  if (!ready || !authChecked)
+  if (!ready || !authChecked || (cloudUser && !subscriptionChecked))
     return (
       <main className="loading">
         <div>✨</div>
@@ -479,6 +509,25 @@ export function GameClient() {
     );
   if (getCloudClient() && !cloudUser)
     return <LoginGate authenticate={authenticate} message={cloudMessage} />;
+  const isAdministrator =
+    cloudUser?.email?.toLowerCase() ===
+    process.env.NEXT_PUBLIC_ADMIN_EMAIL?.toLowerCase();
+  const activeSubscription = subscriptionPayments.some((payment) => {
+    if (payment.status !== 'approved') return false;
+    const approvedAt = new Date(
+      payment.reviewed_at ?? payment.submitted_at,
+    ).getTime();
+    return Date.now() - approvedAt < 31 * 24 * 60 * 60 * 1000;
+  });
+  if (cloudUser && !isAdministrator && !activeSubscription)
+    return (
+      <SubscriptionGate
+        user={cloudUser}
+        payments={subscriptionPayments}
+        refresh={refreshSubscription}
+        signOut={signOut}
+      />
+    );
   return (
     <main className="app-shell">
       <div className="sky-decor" aria-hidden>
@@ -671,6 +720,139 @@ export function GameClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </main>
+  );
+}
+function SubscriptionGate({
+  user,
+  payments,
+  refresh,
+  signOut,
+}: {
+  user: User;
+  payments: SubscriptionPayment[];
+  refresh: () => Promise<void>;
+  signOut: () => Promise<void>;
+}) {
+  const [reference, setReference] = useState('');
+  const [receipt, setReceipt] = useState<File | null>(null);
+  const [status, setStatus] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const pending = payments.find((payment) => payment.status === 'pending');
+  const submitPayment = async (event: FormEvent) => {
+    event.preventDefault();
+    const cloud = getCloudClient();
+    if (!cloud || !receipt) return;
+    if (receipt.size > 5_000_000) {
+      setStatus('The screenshot must be smaller than 5 MB.');
+      return;
+    }
+    setSubmitting(true);
+    setStatus('Uploading payment screenshot…');
+    const extension = receipt.name.split('.').pop()?.toLowerCase() ?? 'jpg';
+    const receiptPath = `${user.id}/${crypto.randomUUID()}.${extension}`;
+    const upload = await cloud.storage
+      .from('payment-receipts')
+      .upload(receiptPath, receipt, { contentType: receipt.type });
+    if (upload.error) {
+      setStatus(upload.error.message);
+      setSubmitting(false);
+      return;
+    }
+    const { error } = await cloud.from('subscription_payments').insert({
+      parent_id: user.id,
+      amount: 300,
+      gcash_reference: reference.trim(),
+      receipt_path: receiptPath,
+    });
+    setSubmitting(false);
+    if (error) setStatus(error.message);
+    else {
+      setStatus('Payment submitted. Please wait for administrator approval.');
+      await refresh();
+    }
+  };
+  return (
+    <main className="subscription-page">
+      <section className="subscription-gate">
+        <div className="subscription-top">
+          <div>
+            <p className="eyebrow">Magical Mathventure membership</p>
+            <h1>
+              {pending ? 'Waiting for approval' : 'Activate your account'}
+            </h1>
+            <p>{user.email}</p>
+          </div>
+          <button onClick={() => void signOut()}>Sign Out</button>
+        </div>
+        {pending ? (
+          <div className="approval-wait">
+            <span>⏳</span>
+            <h2>Payment under review</h2>
+            <p>
+              Your GCash payment with reference <b>{pending.gcash_reference}</b>{' '}
+              was submitted. The learning app will unlock after administrator
+              approval.
+            </p>
+            <button onClick={() => void refresh()}>
+              Check Approval Status
+            </button>
+          </div>
+        ) : (
+          <div className="subscription-checkout">
+            <div className="price-card">
+              <small>MONTHLY FAMILY ACCESS</small>
+              <strong>₱300</strong>
+              <span>per month</span>
+              <ul>
+                <li>All four math operations</li>
+                <li>Progress saved across devices</li>
+                <li>Parent progress dashboard</li>
+                <li>Collectibles and buddies</li>
+              </ul>
+            </div>
+            <div className="gcash-checkout">
+              <h2>Pay through GCash</h2>
+              <p>Scan the QR code, send ₱300, and submit your receipt below.</p>
+              <img
+                src="/gcash-qr.png"
+                alt="GCash InstaPay QR code for JMM Math"
+              />
+              <form onSubmit={submitPayment}>
+                <label>
+                  GCash reference number
+                  <input
+                    value={reference}
+                    onChange={(event) => setReference(event.target.value)}
+                    minLength={6}
+                    maxLength={40}
+                    required
+                  />
+                </label>
+                <label>
+                  Screenshot of payment
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(event) =>
+                      setReceipt(event.target.files?.[0] ?? null)
+                    }
+                    required
+                  />
+                </label>
+                <button
+                  className="magic-button"
+                  type="submit"
+                  disabled={submitting}
+                >
+                  {submitting ? 'Submitting…' : 'Submit Payment for Approval'}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+        {status && <p className="cloud-message">{status}</p>}
+      </section>
     </main>
   );
 }
