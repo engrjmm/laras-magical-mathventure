@@ -47,7 +47,7 @@ grant select, insert on public.subscription_payments to authenticated;
 
 create policy "Parents can view their payments"
 on public.subscription_payments for select to authenticated
-using ((select auth.uid()) = parent_id or (select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+using ((select auth.uid()) = parent_id or (select lower(auth.jwt() ->> 'email')) = 'joycemalasa062897@gmail.com');
 
 create policy "Parents can submit their payments"
 on public.subscription_payments for insert to authenticated
@@ -55,8 +55,8 @@ with check ((select auth.uid()) = parent_id and status = 'pending' and amount = 
 
 create policy "Admins can update payment reviews"
 on public.subscription_payments for update to authenticated
-using ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
-with check ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+using ((select lower(auth.jwt() ->> 'email')) = 'joycemalasa062897@gmail.com')
+with check ((select lower(auth.jwt() ->> 'email')) = 'joycemalasa062897@gmail.com');
 
 grant update on public.subscription_payments to authenticated;
 create index if not exists subscription_payments_parent_id_idx

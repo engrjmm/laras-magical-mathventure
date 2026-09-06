@@ -1312,9 +1312,10 @@ function AccountView({
   const [childName, setChildName] = useState('Lara');
   const [gcashReference, setGcashReference] = useState('');
   const [payments, setPayments] = useState<Payment[]>([]);
-  const isAdmin = user?.app_metadata.role === 'admin';
-  const gcashName = process.env.NEXT_PUBLIC_GCASH_NAME;
-  const gcashNumber = process.env.NEXT_PUBLIC_GCASH_NUMBER;
+  const isAdmin =
+    user?.app_metadata.role === 'admin' ||
+    user?.email?.toLowerCase() ===
+      process.env.NEXT_PUBLIC_ADMIN_EMAIL?.toLowerCase();
   const activeSave = activeProfileId ? currentSave : null;
   const subjectSummary = (subject: string) => {
     const matches = (mode: string) =>
@@ -1495,31 +1496,26 @@ function AccountView({
                 <p className="eyebrow">Family subscription</p>
                 <h2>₱300 per month</h2>
               </div>
-              {gcashName && gcashNumber ? (
-                <>
-                  <p>
-                    Send ₱300 through GCash to <b>{gcashName}</b> at{' '}
-                    <b>{gcashNumber}</b>, then enter the receipt reference
-                    number.
-                  </p>
-                  <form onSubmit={submitPayment}>
-                    <input
-                      value={gcashReference}
-                      onChange={(e) => setGcashReference(e.target.value)}
-                      placeholder="GCash reference number"
-                      minLength={6}
-                      maxLength={40}
-                      required
-                    />
-                    <Button type="submit">Submit Payment</Button>
-                  </form>
-                </>
-              ) : (
-                <p>
-                  GCash payment details will appear here after the administrator
-                  configures the receiving account.
-                </p>
-              )}
+              <p>
+                Scan the QR code and send ₱300 through GCash. Then enter the
+                receipt reference number for administrator approval.
+              </p>
+              <img
+                className="gcash-qr"
+                src="/gcash-qr.png"
+                alt="GCash InstaPay QR code for JMM Math monthly subscription"
+              />
+              <form onSubmit={submitPayment}>
+                <input
+                  value={gcashReference}
+                  onChange={(e) => setGcashReference(e.target.value)}
+                  placeholder="GCash reference number"
+                  minLength={6}
+                  maxLength={40}
+                  required
+                />
+                <Button type="submit">Submit Payment</Button>
+              </form>
               {payments[0] && (
                 <p className="payment-status">
                   Latest payment: <b>{payments[0].status}</b>
