@@ -1,5 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
+import type { User } from '@supabase/supabase-js';
 import {
   ArrowLeft,
   BookOpen,
@@ -13,6 +15,7 @@ import {
   Shirt,
   Sparkles,
   Star,
+  UserRound,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -44,6 +47,7 @@ import {
   type Mode,
   type Question,
 } from '@/lib/game';
+import { getCloudClient, type ChildProfile } from '@/lib/cloud';
 type View =
   | 'home'
   | 'modes'
@@ -53,6 +57,7 @@ type View =
   | 'closet'
   | 'buddy'
   | 'profile'
+  | 'account'
   | 'settings';
 const feedback = [
   'Correct, Lara! 🌟',
@@ -131,7 +136,11 @@ export function GameClient() {
     ),
     [complete, setComplete] = useState(false),
     [resetOpen, setResetOpen] = useState(false),
-    [confirmReset, setConfirmReset] = useState(false);
+    [confirmReset, setConfirmReset] = useState(false),
+    [cloudUser, setCloudUser] = useState<User | null>(null),
+    [profiles, setProfiles] = useState<ChildProfile[]>([]),
+    [activeProfileId, setActiveProfileId] = useState<string | null>(null),
+    [cloudMessage, setCloudMessage] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const s = loadSave();
@@ -144,6 +153,62 @@ export function GameClient() {
   useEffect(() => {
     if (ready) storeSave({ ...save, question: q });
   }, [save, q, ready]);
+  useEffect(() => {
+    const cloud = getCloudClient();
+    if (!cloud) return;
+    cloud.auth.getUser().then(({ data }) => setCloudUser(data.user));
+    const { data } = cloud.auth.onAuthStateChange((_event, session) =>
+      setCloudUser(session?.user ?? null),
+    );
+    return () => data.subscription.unsubscribe();
+  }, []);
+  useEffect(() => {
+    const cloud = getCloudClient();
+    if (!cloudUser || !cloud) {
+      setProfiles([]);
+      setActiveProfileId(null);
+      return;
+    }
+    cloud
+      .from('child_profiles')
+      .select('*')
+      .order('created_at')
+      .then(({ data, error }) => {
+        if (error) return setCloudMessage(error.message);
+        const rows = (data ?? []) as ChildProfile[];
+        setProfiles(rows);
+        const remembered = localStorage.getItem('lara-active-cloud-profile');
+        const chosen = rows.find((p) => p.id === remembered) ?? rows[0];
+        if (chosen) {
+          setSave(chosen.save_data);
+          setQ(
+            chosen.save_data.question ??
+              makeQuestion(
+                chosen.save_data.practice.mode,
+                chosen.save_data.practice.selectedTables,
+              ),
+          );
+          setActiveProfileId(chosen.id);
+          localStorage.setItem('lara-active-cloud-profile', chosen.id);
+        }
+      });
+  }, [cloudUser]);
+  useEffect(() => {
+    const cloud = getCloudClient();
+    if (!ready || !cloudUser || !activeProfileId || !cloud) return;
+    const timer = window.setTimeout(async () => {
+      const { error } = await cloud
+        .from('child_profiles')
+        .update({
+          name: save.player.name,
+          save_data: { ...save, question: q },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', activeProfileId);
+      setCloudMessage(error ? error.message : 'Progress saved to the cloud ✓');
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [save, q, ready, cloudUser, activeProfileId]);
   const update = (fn: (s: SaveData) => SaveData) =>
     setSave((s) => fn(structuredClone(s)));
   const chooseMode = (mode: Mode) => {
@@ -285,6 +350,66 @@ export function GameClient() {
       return s;
     });
   };
+  const authenticate = async (
+    email: string,
+    password: string,
+    register: boolean,
+  ) => {
+    const cloud = getCloudClient();
+    if (!cloud) return setCloudMessage('Cloud setup is not connected yet.');
+    setCloudMessage('Please wait…');
+    const result = register
+      ? await cloud.auth.signUp({ email, password })
+      : await cloud.auth.signInWithPassword({ email, password });
+    setCloudMessage(
+      result.error
+        ? result.error.message
+        : register && !result.data.session
+          ? 'Check your email to confirm the new parent account.'
+          : 'Signed in successfully.',
+    );
+  };
+  const createChildProfile = async (name: string) => {
+    const cloud = getCloudClient();
+    if (!cloud || !cloudUser || !name.trim()) return;
+    const childSave = structuredClone(save);
+    childSave.player.name = name.trim();
+    const { data, error } = await cloud
+      .from('child_profiles')
+      .insert({
+        parent_id: cloudUser.id,
+        name: name.trim(),
+        save_data: { ...childSave, question: q },
+      })
+      .select('*')
+      .single();
+    if (error) return setCloudMessage(error.message);
+    const profile = data as ChildProfile;
+    setProfiles((items) => [...items, profile]);
+    setSave(childSave);
+    setActiveProfileId(profile.id);
+    localStorage.setItem('lara-active-cloud-profile', profile.id);
+    setCloudMessage(
+      `${profile.name}’s current device progress is now in the cloud ✓`,
+    );
+  };
+  const selectChildProfile = (profile: ChildProfile) => {
+    setSave(profile.save_data);
+    setQ(
+      profile.save_data.question ??
+        makeQuestion(
+          profile.save_data.practice.mode,
+          profile.save_data.practice.selectedTables,
+        ),
+    );
+    setActiveProfileId(profile.id);
+    localStorage.setItem('lara-active-cloud-profile', profile.id);
+    setCloudMessage(`Using ${profile.name}’s profile`);
+  };
+  const signOut = async () => {
+    await getCloudClient()?.auth.signOut();
+    setCloudMessage('Signed out. Progress remains saved on this device.');
+  };
   const upload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (
@@ -375,6 +500,21 @@ export function GameClient() {
       )}{' '}
       {view === 'profile' && (
         <Profile save={save} back={() => setView('home')} />
+      )}{' '}
+      {view === 'account' && (
+        <AccountView
+          configured={Boolean(getCloudClient())}
+          user={cloudUser}
+          profiles={profiles}
+          currentSave={save}
+          activeProfileId={activeProfileId}
+          message={cloudMessage}
+          back={() => setView('home')}
+          authenticate={authenticate}
+          createProfile={createChildProfile}
+          selectProfile={selectChildProfile}
+          signOut={signOut}
+        />
       )}{' '}
       {view === 'settings' && (
         <SettingsView
@@ -569,6 +709,7 @@ function HomeView({ save, go }: { save: SaveData; go: (v: View) => void }) {
           [Shirt, 'My Closet', 'closet'],
           [Star, 'Adventure Buddy', 'buddy'],
           [BookOpen, 'Lara’s Profile', 'profile'],
+          [UserRound, 'Parent Account', 'account'],
           [Settings, 'Settings', 'settings'],
         ].map(([Icon, label, to], i) => {
           const C = Icon as typeof Home;
@@ -1117,6 +1258,206 @@ function Profile({ save, back }: { save: SaveData; back: () => void }) {
           );
         })}
       </div>
+    </section>
+  );
+}
+function AccountView({
+  configured,
+  user,
+  profiles,
+  currentSave,
+  activeProfileId,
+  message,
+  back,
+  authenticate,
+  createProfile,
+  selectProfile,
+  signOut,
+}: {
+  configured: boolean;
+  user: User | null;
+  profiles: ChildProfile[];
+  currentSave: SaveData;
+  activeProfileId: string | null;
+  message: string;
+  back: () => void;
+  authenticate: (
+    email: string,
+    password: string,
+    register: boolean,
+  ) => Promise<void>;
+  createProfile: (name: string) => Promise<void>;
+  selectProfile: (profile: ChildProfile) => void;
+  signOut: () => Promise<void>;
+}) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [childName, setChildName] = useState('Lara');
+  const activeSave = activeProfileId ? currentSave : null;
+  const subjectSummary = (subject: string) => {
+    const matches = (mode: string) =>
+      subject === 'Addition'
+        ? mode.startsWith('addition')
+        : subject === 'Subtraction'
+          ? mode.startsWith('subtraction')
+          : subject === 'Division'
+            ? mode.startsWith('division')
+            : !mode.startsWith('addition') &&
+              !mode.startsWith('subtraction') &&
+              !mode.startsWith('division');
+    return Object.entries(activeSave?.practice.stats ?? {}).reduce(
+      (total, [mode, stat]) =>
+        matches(mode)
+          ? {
+              attempts: total.attempts + stat.attempts,
+              correct: total.correct + stat.correct,
+            }
+          : total,
+      { attempts: 0, correct: 0 },
+    );
+  };
+  const submit = (event: FormEvent, register: boolean) => {
+    event.preventDefault();
+    void authenticate(email.trim(), password, register);
+  };
+  return (
+    <section className="page inner-page account-page">
+      <button className="back" onClick={back}>
+        <ArrowLeft /> Home
+      </button>
+      <div className="section-heading">
+        <span>☁️</span>
+        <div>
+          <p className="eyebrow">For parents and guardians</p>
+          <h1>Family Progress</h1>
+          <p>Save learning progress online and use it across devices.</p>
+        </div>
+      </div>
+      {!configured ? (
+        <div className="account-card setup-needed">
+          <h2>Cloud connection needed</h2>
+          <p>
+            The account screens are ready. Connect this site to a Supabase
+            project to activate registration and cloud saving.
+          </p>
+        </div>
+      ) : !user ? (
+        <form
+          className="account-card auth-form"
+          onSubmit={(e) => submit(e, false)}
+        >
+          <h2>Parent sign in</h2>
+          <label>
+            Email
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="email"
+            />
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              minLength={8}
+              required
+              autoComplete="current-password"
+            />
+          </label>
+          <div className="account-actions">
+            <button className="magic-button" type="submit">
+              Sign In
+            </button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void authenticate(email.trim(), password, true)}
+            >
+              Create Account
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <div className="account-card">
+          <div className="account-head">
+            <div>
+              <small>Signed in as</small>
+              <b>{user.email}</b>
+            </div>
+            <Button variant="outline" onClick={() => void signOut()}>
+              Sign Out
+            </Button>
+          </div>
+          <h2>Children</h2>
+          <div className="child-grid">
+            {profiles.map((profile) => (
+              <button
+                key={profile.id}
+                className={profile.id === activeProfileId ? 'active' : ''}
+                onClick={() => selectProfile(profile)}
+              >
+                <span>👧🏻</span>
+                <b>{profile.name}</b>
+                <small>{profile.save_data.player.totalCorrect} correct</small>
+                <small>
+                  {profile.save_data.player.problemsSolved} attempts
+                </small>
+              </button>
+            ))}
+          </div>
+          {activeSave && (
+            <div className="family-stats">
+              {['Addition', 'Subtraction', 'Multiplication', 'Division'].map(
+                (subject) => {
+                  const stat = subjectSummary(subject);
+                  return (
+                    <div key={subject}>
+                      <b>{subject}</b>
+                      <span>{stat.correct} correct</span>
+                      <small>
+                        {stat.attempts} attempts ·{' '}
+                        {Math.max(0, stat.attempts - stat.correct)} mistakes
+                      </small>
+                    </div>
+                  );
+                },
+              )}
+            </div>
+          )}
+          <form
+            className="add-child"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void createProfile(childName);
+            }}
+          >
+            <label>
+              Child’s name
+              <input
+                value={childName}
+                onChange={(e) => setChildName(e.target.value)}
+                required
+                maxLength={50}
+              />
+            </label>
+            <Button type="submit">
+              Add Child & Upload This Device’s Progress
+            </Button>
+          </form>
+        </div>
+      )}
+      {message && (
+        <p className="cloud-message" aria-live="polite">
+          {message}
+        </p>
+      )}
+      <p className="privacy-note">
+        🔒 Each parent can access only their own children’s records.
+      </p>
     </section>
   );
 }
