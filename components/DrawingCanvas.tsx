@@ -144,7 +144,7 @@ export function DrawingCanvas({
                 <i aria-label="Handwriting answer box" />
                 {worksheetShowAnswers && (
                   <em aria-label={`Correct answer: ${worksheetTable * n}`}>
-                    ✓ {worksheetTable * n}
+                    {worksheetTable * n}
                   </em>
                 )}
               </span>
