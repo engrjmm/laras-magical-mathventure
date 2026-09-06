@@ -4,11 +4,13 @@ import { Eraser, Pencil, Redo2, Trash2, Undo2 } from 'lucide-react';
 export function DrawingCanvas({
   a,
   b,
+  operator,
   large = false,
   resetKey,
 }: {
   a: number;
   b: number;
+  operator: '+' | '−' | '×' | '÷';
   large?: boolean;
   resetKey: string;
 }) {
@@ -125,9 +127,14 @@ export function DrawingCanvas({
         </button>
       </div>
       <div className="notebook-paper">
-        <div className="vertical-problem notebook-problem" aria-label={`${a} multiplied by ${b}`}>
+        <div
+          className="vertical-problem notebook-problem"
+          aria-label={`${a} ${operator} ${b}`}
+        >
           <span>{a}</span>
-          <span>× {b}</span>
+          <span>
+            {operator} {b}
+          </span>
           <hr />
         </div>
         <canvas

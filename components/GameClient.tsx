@@ -48,6 +48,7 @@ type View =
   | 'home'
   | 'modes'
   | 'play'
+  | 'table-list'
   | 'treasures'
   | 'closet'
   | 'buddy'
@@ -60,12 +61,41 @@ const feedback = [
   'Fantastic thinking! 🌈',
   'Superstar! ⭐',
 ];
-const buddies = ['Bunny', 'Kitty', 'Panda', 'Unicorn'],
+const buddies = [
+    'Bunny',
+    'Kitty',
+    'Panda',
+    'Unicorn',
+    'Puppy',
+    'Fox',
+    'Chick',
+    'Koala',
+    'Hamster',
+    'Otter',
+    'Penguin',
+    'Fawn',
+    'Hedgehog',
+    'Red Panda',
+    'Seal',
+    'Owl',
+  ],
   buddyIcon: Record<string, string> = {
     Bunny: '🐰',
     Kitty: '🐱',
     Panda: '🐼',
     Unicorn: '🦄',
+    Puppy: '🐶',
+    Fox: '🦊',
+    Chick: '🐥',
+    Koala: '🐨',
+    Hamster: '🐹',
+    Otter: '🦦',
+    Penguin: '🐧',
+    Fawn: '🦌',
+    Hedgehog: '🦔',
+    'Red Panda': '🐾',
+    Seal: '🦭',
+    Owl: '🦉',
   };
 const accessories = [
     'Pretty Bow',
@@ -222,6 +252,30 @@ export function GameClient() {
     setComplete(false);
     next();
   };
+  const recordTableList = (correct: number, total: number) => {
+    update((s) => {
+      s.player.totalCorrect += correct;
+      s.player.problemsSolved += total;
+      s.player.currentStreak =
+        correct === total ? s.player.currentStreak + correct : 0;
+      s.player.bestStreak = Math.max(
+        s.player.bestStreak,
+        s.player.currentStreak,
+      );
+      s.adventure.progress = Math.min(
+        s.adventure.target,
+        s.adventure.progress + correct,
+      );
+      const stat = s.practice.stats['table-list'] ?? {
+        attempts: 0,
+        correct: 0,
+      };
+      stat.attempts += total;
+      stat.correct += correct;
+      s.practice.stats['table-list'] = stat;
+      return s;
+    });
+  };
   const upload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (
@@ -254,7 +308,7 @@ export function GameClient() {
       <header className="topbar">
         <button onClick={() => setView('home')} className="brand">
           Lara’s Magical Mathventure <span>✨</span>
-          <small>Multiply • Explore • Collect</small>
+          <small>Add • Subtract • Multiply • Divide • Collect</small>
         </button>
         <div className="top-stats">
           <span>⭐ {save.player.totalCorrect}</span>
@@ -277,8 +331,16 @@ export function GameClient() {
         <Modes
           save={save}
           choose={chooseMode}
+          openTableList={() => setView('table-list')}
           update={update}
           back={() => setView('home')}
+        />
+      )}{' '}
+      {view === 'table-list' && (
+        <TimesTableList
+          tables={save.practice.selectedTables}
+          back={() => setView('modes')}
+          record={recordTableList}
         />
       )}{' '}
       {view === 'play' && q && (
@@ -479,7 +541,7 @@ function HomeView({ save, go }: { save: SaveData; go: (v: View) => void }) {
         <button onClick={() => go('modes')} className="side-card yellow">
           <span>🌈</span>
           <b>Practice & explore</b>
-          <small>Pick any mode. Nothing is locked.</small>
+          <small>Add, subtract, multiply, or divide. Nothing is locked.</small>
         </button>
         <button onClick={() => go('buddy')} className="side-card mint">
           <span>
@@ -520,11 +582,13 @@ function HomeView({ save, go }: { save: SaveData; go: (v: View) => void }) {
 function Modes({
   save,
   choose,
+  openTableList,
   update,
   back,
 }: {
   save: SaveData;
   choose: (m: Mode) => void;
+  openTableList: () => void;
   update: (f: (s: SaveData) => SaveData) => void;
   back: () => void;
 }) {
@@ -553,6 +617,14 @@ function Modes({
           </button>
         ))}
       </div>
+      <button className="table-list-card" onClick={openTableList}>
+        <span>📝</span>
+        <div>
+          <h2>Multiplication Table List</h2>
+          <p>Fill in all ten answers for one table.</p>
+        </div>
+        <ChevronRight />
+      </button>
       <div className="table-picker">
         <div>
           <h2>✨ Pick your tables</h2>
@@ -596,6 +668,110 @@ function Modes({
     </section>
   );
 }
+function TimesTableList({
+  tables,
+  back,
+  record,
+}: {
+  tables: number[];
+  back: () => void;
+  record: (correct: number, total: number) => void;
+}) {
+  const [table, setTable] = useState(tables[0] ?? 2);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [checked, setChecked] = useState(false);
+  const score = Array.from({ length: 10 }, (_, i) => i + 1).filter(
+    (n) => Number(answers[n]) === table * n,
+  ).length;
+  const check = () => {
+    if (checked) return;
+    setChecked(true);
+    record(score, 10);
+  };
+  const reset = () => {
+    setAnswers({});
+    setChecked(false);
+  };
+  return (
+    <section className="page inner-page table-list-page">
+      <button className="back" onClick={back}>
+        <ArrowLeft /> Modes
+      </button>
+      <div className="section-heading">
+        <span>📝</span>
+        <div>
+          <p className="eyebrow">Multiplication practice</p>
+          <h1>Table List Challenge</h1>
+          <p>Complete every fact, then check your list.</p>
+        </div>
+      </div>
+      <div className="list-table-picker">
+        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+          <button
+            key={n}
+            className={table === n ? 'selected' : ''}
+            onClick={() => {
+              setTable(n);
+              reset();
+            }}
+          >
+            ×{n}
+          </button>
+        ))}
+      </div>
+      <div className="times-list">
+        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
+          const correct = Number(answers[n]) === table * n;
+          return (
+            <label
+              key={n}
+              className={checked ? (correct ? 'correct' : 'try-again') : ''}
+            >
+              <span>
+                {table} × {n} =
+              </span>
+              <input
+                aria-label={`${table} times ${n}`}
+                inputMode="numeric"
+                value={answers[n] ?? ''}
+                onChange={(e) => {
+                  if (!checked)
+                    setAnswers((a) => ({
+                      ...a,
+                      [n]: e.target.value.replace(/\D/g, ''),
+                    }));
+                }}
+              />
+              {checked && <b>{correct ? '✓' : `→ ${table * n}`}</b>}
+            </label>
+          );
+        })}
+      </div>
+      {checked ? (
+        <div className="list-result">
+          <strong>{score}/10</strong>
+          <span>
+            {score === 10
+              ? 'Perfect table magic! ✨'
+              : 'Lovely effort! Review the answers and try a fresh list. 🌸'}
+          </span>
+          <button className="magic-button" onClick={reset}>
+            Try This Table Again
+          </button>
+        </div>
+      ) : (
+        <button
+          className="magic-button check-list"
+          onClick={check}
+          disabled={Object.keys(answers).length < 10}
+        >
+          ✨ Check My Table
+        </button>
+      )}
+    </section>
+  );
+}
+
 function Play({
   save,
   q,
@@ -615,7 +791,7 @@ function Play({
   answer: (n: number) => void;
   back: () => void;
 }) {
-  const advanced = save.practice.mode !== 'table';
+  const advanced = MODE_INFO[save.practice.mode].workspace;
   return (
     <section className="page play-page">
       <div className="play-head">
@@ -645,14 +821,15 @@ function Play({
         </p>
         {advanced ? null : (
           <div className="flash-problem">
-            {q.a} × {q.b} = ?
+            {q.a} {q.operator} {q.b} = ?
           </div>
         )}
         {advanced && (
           <DrawingCanvas
             a={q.a}
             b={q.b}
-            large={save.practice.mode === '3x2'}
+            operator={q.operator}
+            large={save.practice.mode === '3x2' || q.a >= 100}
             resetKey={q.key}
           />
         )}
