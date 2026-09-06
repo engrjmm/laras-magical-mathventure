@@ -1223,6 +1223,12 @@ function Picker({
 function Profile({ save, back }: { save: SaveData; back: () => void }) {
   const unique = Object.keys(save.rewards.treasures).length,
     total = Object.values(save.rewards.treasures).reduce((a, b) => a + b, 0);
+  const operations = [
+    { name: 'Addition', icon: '➕', subject: 'addition' },
+    { name: 'Subtraction', icon: '➖', subject: 'subtraction' },
+    { name: 'Multiplication', icon: '✖️', subject: 'multiplication' },
+    { name: 'Division', icon: '➗', subject: 'division' },
+  ] as const;
   return (
     <section className="page inner-page">
       <button className="back" onClick={back}>
@@ -1254,16 +1260,48 @@ function Profile({ save, back }: { save: SaveData; back: () => void }) {
           </div>
         ))}
       </div>
-      <h2 className="subheading">Practice by mode</h2>
-      <div className="mode-stats">
-        {Object.entries(MODE_INFO).map(([k, m]) => {
-          const st = save.practice.stats[k] ?? { attempts: 0, correct: 0 };
+      <h2 className="subheading">Practice by operation</h2>
+      <div className="operation-stats">
+        {operations.map((operation) => {
+          const modes = Object.entries(MODE_INFO).filter(
+            ([, mode]) => mode.subject === operation.subject,
+          );
           return (
-            <div key={k}>
-              <span>{m.icon}</span>
-              <b>{m.name}</b>
-              <small>{st.correct} solved</small>
-            </div>
+            <section className="operation-group" key={operation.subject}>
+              <div className="operation-heading">
+                <span>{operation.icon}</span>
+                <h3>{operation.name}</h3>
+              </div>
+              <div className="mode-stats">
+                {modes.map(([key, mode]) => {
+                  const stat = save.practice.stats[key] ?? {
+                    attempts: 0,
+                    correct: 0,
+                  };
+                  return (
+                    <div key={key}>
+                      <span>{mode.icon}</span>
+                      <b>{mode.name}</b>
+                      <small>
+                        {stat.correct} correct · {stat.attempts} attempts
+                      </small>
+                    </div>
+                  );
+                })}
+                {operation.subject === 'multiplication' && (
+                  <div>
+                    <span>📝</span>
+                    <b>Written Table List</b>
+                    <small>
+                      {save.practice.stats['table-list']?.correct ?? 0} correct
+                      {' · '}
+                      {save.practice.stats['table-list']?.attempts ?? 0}{' '}
+                      attempts
+                    </small>
+                  </div>
+                )}
+              </div>
+            </section>
           );
         })}
       </div>
