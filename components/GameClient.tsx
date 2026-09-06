@@ -792,6 +792,42 @@ function Play({
   back: () => void;
 }) {
   const advanced = MODE_INFO[save.practice.mode].workspace;
+  const answerPanel = (
+    <div
+      className={`answer-zone ${advanced ? 'compact-answers answer-zone-above' : ''}`}
+    >
+      <h2>🌟 What’s your final answer?</h2>
+      <div className="answers">
+        {q.options.map((n) => (
+          <button
+            key={n}
+            className={selectedAnswer === n ? 'selected' : ''}
+            aria-pressed={selectedAnswer === n}
+            onClick={() => answer(n)}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+      {message && (
+        <p
+          className={message.startsWith('Almost') ? 'encourage' : 'success'}
+          aria-live="polite"
+        >
+          {message}
+        </p>
+      )}
+      {attempts >= 2 && (
+        <div className="hint">
+          <Lightbulb />
+          <div>
+            <b>Need a Hint?</b>
+            <p>{hint}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
   return (
     <section className="page play-page">
       <div className="play-head">
@@ -824,6 +860,7 @@ function Play({
             {q.a} {q.operator} {q.b} = ?
           </div>
         )}
+        {advanced && answerPanel}
         {advanced && (
           <DrawingCanvas
             a={q.a}
@@ -833,38 +870,7 @@ function Play({
             resetKey={q.key}
           />
         )}
-        <div className={`answer-zone ${advanced ? 'compact-answers' : ''}`}>
-          <h2>🌟 What’s your final answer?</h2>
-          <div className="answers">
-            {q.options.map((n) => (
-              <button
-                key={n}
-                className={selectedAnswer === n ? 'selected' : ''}
-                aria-pressed={selectedAnswer === n}
-                onClick={() => answer(n)}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-          {message && (
-            <p
-              className={message.startsWith('Almost') ? 'encourage' : 'success'}
-              aria-live="polite"
-            >
-              {message}
-            </p>
-          )}
-          {attempts >= 2 && (
-            <div className="hint">
-              <Lightbulb />
-              <div>
-                <b>Need a Hint?</b>
-                <p>{hint}</p>
-              </div>
-            </div>
-          )}
-        </div>
+        {!advanced && answerPanel}
       </div>
     </section>
   );
