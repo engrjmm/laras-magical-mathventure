@@ -365,7 +365,11 @@ export function GameClient() {
     if (!cloud) return setCloudMessage('Cloud setup is not connected yet.');
     setCloudMessage('Please wait…');
     const result = register
-      ? await cloud.auth.signUp({ email, password })
+      ? await cloud.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: window.location.origin },
+        })
       : await cloud.auth.signInWithPassword({ email, password });
     setCloudMessage(
       result.error
