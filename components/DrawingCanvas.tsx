@@ -6,6 +6,7 @@ export function DrawingCanvas({
   b,
   operator,
   worksheetTable,
+  worksheetShowAnswers = false,
   large = false,
   resetKey,
 }: {
@@ -13,6 +14,7 @@ export function DrawingCanvas({
   b?: number;
   operator?: '+' | '−' | '×' | '÷';
   worksheetTable?: number;
+  worksheetShowAnswers?: boolean;
   large?: boolean;
   resetKey: string;
 }) {
@@ -131,12 +133,20 @@ export function DrawingCanvas({
       <div className="notebook-paper">
         {worksheetTable ? (
           <div
-            className="handwritten-table-template"
+            className={`handwritten-table-template ${worksheetShowAnswers ? 'answers-visible' : ''}`}
             aria-label={`${worksheetTable} multiplication table worksheet`}
           >
             {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-              <span key={n}>
-                {worksheetTable} × {n} =
+              <span className="table-write-item" key={n}>
+                <b>
+                  {worksheetTable} × {n} =
+                </b>
+                <i aria-label="Handwriting answer box" />
+                {worksheetShowAnswers && (
+                  <em aria-label={`Correct answer: ${worksheetTable * n}`}>
+                    ✓ {worksheetTable * n}
+                  </em>
+                )}
               </span>
             ))}
           </div>

@@ -748,6 +748,7 @@ function TimesTableList({
       </div>
       <DrawingCanvas
         worksheetTable={table}
+        worksheetShowAnswers={showKey}
         large
         resetKey={`table-list-${table}-${recordedScore ?? 'new'}`}
       />
@@ -756,18 +757,12 @@ function TimesTableList({
           className="magic-button check-list"
           onClick={() => setShowKey(true)}
         >
-          ✨ Show Answer Key
+          ✨ Submit Answers
         </button>
       ) : (
         <div className="written-check">
-          <h2>Answer key</h2>
-          <div>
-            {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-              <span key={n}>
-                {table} × {n} = <b>{table * n}</b>
-              </span>
-            ))}
-          </div>
+          <h2>Answers submitted!</h2>
+          <p>The correct answer is now beside each handwriting box.</p>
           {recordedScore === null ? (
             <>
               <p>Compare your handwriting. How many did you get right?</p>
