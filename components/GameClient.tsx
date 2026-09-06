@@ -757,7 +757,7 @@ function Modes({
         <ArrowLeft /> Home
       </button>
       <div className="section-heading">
-        <span>🌈</span>
+        <span>🧠</span>
         <div>
           <p className="eyebrow">Choose your path</p>
           <h1>What shall we practice?</h1>
