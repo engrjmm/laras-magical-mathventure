@@ -216,6 +216,8 @@ export function AdminDashboard() {
       parentEmail?: string;
       temporaryPassword?: string;
       access?: string;
+      profile?: ChildProfile;
+      payment?: Payment;
     };
     setManualCreating(false);
     if (!response.ok || !result.parentEmail || !result.temporaryPassword) {
@@ -235,6 +237,18 @@ export function AdminDashboard() {
         : `Client account created with ${manualAccessLength} ${manualAccessUnit} of free access ✓`,
     );
     await refresh();
+    if (result.profile)
+      setClients((items) =>
+        items.some((client) => client.id === result.profile?.id)
+          ? items
+          : [result.profile as ChildProfile, ...items],
+      );
+    if (result.payment)
+      setPayments((items) =>
+        items.some((payment) => payment.id === result.payment?.id)
+          ? items
+          : [result.payment as Payment, ...items],
+      );
   };
   if (!checked)
     return (

@@ -126,15 +126,22 @@ export async function POST(request: Request) {
   saveData.rewards.treasures = Object.fromEntries(
     starterTreasures.slice(0, 10).map((treasure) => [treasure.name, 1]),
   );
-  const { error: profileError } = await admin.from('child_profiles').insert({
-    parent_id: created.user.id,
-    parent_email: parentEmail,
-    name: childName,
-    save_data: saveData,
-  });
-  if (profileError) {
+  const { data: profile, error: profileError } = await admin
+    .from('child_profiles')
+    .insert({
+      parent_id: created.user.id,
+      parent_email: parentEmail,
+      name: childName,
+      save_data: saveData,
+    })
+    .select('*')
+    .single();
+  if (profileError || !profile) {
     await admin.auth.admin.deleteUser(created.user.id);
-    return json({ error: profileError.message }, 400);
+    return json(
+      { error: profileError?.message ?? 'Child profile creation failed.' },
+      400,
+    );
   }
 
   const grantedAt = new Date();
@@ -147,7 +154,7 @@ export async function POST(request: Request) {
     accessUnit === 'permanent'
       ? `ADMIN-PERM-${grantedAt.toISOString().slice(0, 10)}`
       : `ADMIN-UNTIL-${expiresAt.getTime()}`;
-  const { error: paymentError } = await admin
+  const { data: payment, error: paymentError } = await admin
     .from('subscription_payments')
     .insert({
       parent_id: created.user.id,
@@ -155,14 +162,19 @@ export async function POST(request: Request) {
       gcash_reference: grantReference,
       status: 'approved',
       reviewed_at: grantedAt.toISOString(),
-    });
-  if (paymentError) {
+    })
+    .select('*')
+    .single();
+  if (paymentError || !payment) {
     await admin
       .from('child_profiles')
       .delete()
       .eq('parent_id', created.user.id);
     await admin.auth.admin.deleteUser(created.user.id);
-    return json({ error: paymentError.message }, 400);
+    return json(
+      { error: paymentError?.message ?? 'Access grant creation failed.' },
+      400,
+    );
   }
 
   return json(
@@ -174,6 +186,8 @@ export async function POST(request: Request) {
         accessUnit === 'permanent'
           ? 'permanent-free'
           : expiresAt.toISOString(),
+      profile,
+      payment,
     },
     201,
   );
