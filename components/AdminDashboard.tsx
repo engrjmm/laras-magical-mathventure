@@ -41,6 +41,21 @@ const accessDetailsFor = (
     )[0];
   if (approved) {
     const activatedAt = new Date(approved.reviewed_at ?? approved.submitted_at);
+    if (approved.gcash_reference.startsWith('ADMIN-UNTIL-')) {
+      const expiresAt = new Date(
+        Number(approved.gcash_reference.slice('ADMIN-UNTIL-'.length)),
+      );
+      return expiresAt.getTime() > now
+        ? { status: 'active', label: 'Granted access', activatedAt, expiresAt }
+        : { status: 'expired', label: 'Expired', activatedAt, expiresAt };
+    }
+    if (approved.gcash_reference.startsWith('ADMIN-'))
+      return {
+        status: 'active',
+        label: 'Free access',
+        activatedAt,
+        expiresAt: null,
+      };
     const expiresAt = new Date(activatedAt.getTime() + 30 * DAY_MS);
     return expiresAt.getTime() > now
       ? { status: 'active', label: 'Active', activatedAt, expiresAt }
@@ -75,6 +90,10 @@ export function AdminDashboard() {
     [manualEmail, setManualEmail] = useState(''),
     [manualChildName, setManualChildName] = useState(''),
     [manualBirthDate, setManualBirthDate] = useState(''),
+    [manualAccessUnit, setManualAccessUnit] = useState<
+      'days' | 'months' | 'permanent'
+    >('permanent'),
+    [manualAccessLength, setManualAccessLength] = useState(1),
     [manualCreating, setManualCreating] = useState(false),
     [createdLogin, setCreatedLogin] = useState<{
       email: string;
@@ -188,12 +207,15 @@ export function AdminDashboard() {
         parentEmail: manualEmail,
         childName: manualChildName,
         birthDate: manualBirthDate,
+        accessUnit: manualAccessUnit,
+        accessLength: manualAccessLength,
       }),
     });
     const result = (await response.json()) as {
       error?: string;
       parentEmail?: string;
       temporaryPassword?: string;
+      access?: string;
     };
     setManualCreating(false);
     if (!response.ok || !result.parentEmail || !result.temporaryPassword) {
@@ -207,7 +229,11 @@ export function AdminDashboard() {
     setManualEmail('');
     setManualChildName('');
     setManualBirthDate('');
-    setMessage('Client account created and approved for 30 days ✓');
+    setMessage(
+      manualAccessUnit === 'permanent'
+        ? 'Client account created with permanent free access ✓'
+        : `Client account created with ${manualAccessLength} ${manualAccessUnit} of free access ✓`,
+    );
     await refresh();
   };
   if (!checked)
@@ -241,7 +267,10 @@ export function AdminDashboard() {
       </main>
     );
   const pending = payments.filter((p) => p.status === 'pending'),
-    approved = payments.filter((p) => p.status === 'approved'),
+    approved = payments.filter(
+      (p) =>
+        p.status === 'approved' && !p.gcash_reference.startsWith('ADMIN-'),
+    ),
     activeClients = clients.filter(
       (client) =>
         ['active', 'trial'].includes(
@@ -334,7 +363,10 @@ export function AdminDashboard() {
                 <UserPlus />
                 <div>
                   <h2>Add a client manually</h2>
-                  <p>Create one parent login and one child profile.</p>
+                  <p>
+                    Create one parent login and one child profile, then choose how
+                    long free access will last.
+                  </p>
                 </div>
               </div>
               <label>
@@ -364,12 +396,42 @@ export function AdminDashboard() {
                   required
                 />
               </label>
+              <label>
+                Free access
+                <select
+                  value={manualAccessUnit}
+                  onChange={(event) =>
+                    setManualAccessUnit(
+                      event.target.value as 'days' | 'months' | 'permanent',
+                    )
+                  }
+                >
+                  <option value="permanent">No expiration</option>
+                  <option value="days">Number of days</option>
+                  <option value="months">Number of months</option>
+                </select>
+              </label>
+              {manualAccessUnit !== 'permanent' && (
+                <label>
+                  How many {manualAccessUnit}
+                  <input
+                    type="number"
+                    min={1}
+                    max={manualAccessUnit === 'months' ? 120 : 3650}
+                    value={manualAccessLength}
+                    onChange={(event) =>
+                      setManualAccessLength(Number(event.target.value))
+                    }
+                    required
+                  />
+                </label>
+              )}
               <p className="password-rule">
                 The server creates the temporary password from the child’s first
                 name + birthday (MMDD). Example: Lara, September 17 → lara0917.
               </p>
               <Button type="submit" disabled={manualCreating}>
-                {manualCreating ? 'Creating…' : 'Create & Approve Client'}
+                {manualCreating ? 'Creating…' : 'Create Client & Grant Access'}
               </Button>
               {createdLogin && (
                 <output className="created-login">
@@ -417,7 +479,9 @@ export function AdminDashboard() {
                       <span>
                         {access.expiresAt
                           ? access.expiresAt.toLocaleDateString()
-                          : 'After approval'}
+                          : access.label === 'Free access'
+                            ? 'Never'
+                            : 'After approval'}
                       </span>
                       <span>{client.save_data.player.totalCorrect}</span>
                       <span>{client.save_data.player.problemsSolved}</span>
@@ -594,7 +658,11 @@ function PaymentTable({
       {payments.map((payment) => (
         <div key={payment.id}>
           <span>{new Date(payment.submitted_at).toLocaleDateString()}</span>
-          <b>{payment.gcash_reference}</b>
+          <b>
+            {payment.gcash_reference.startsWith('ADMIN-')
+              ? 'Admin-granted access'
+              : payment.gcash_reference}
+          </b>
           <span>
             {payment.receipt_url ? (
               <a href={payment.receipt_url} target="_blank" rel="noreferrer">
@@ -605,7 +673,11 @@ function PaymentTable({
               'No screenshot'
             )}
           </span>
-          <span>₱{payment.amount}</span>
+          <span>
+            {payment.gcash_reference.startsWith('ADMIN-')
+              ? 'Free'
+              : `₱${payment.amount}`}
+          </span>
           <strong data-status={payment.status}>{payment.status}</strong>
           <span className="review-actions">
             {payment.status === 'pending' ? (

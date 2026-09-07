@@ -613,6 +613,13 @@ export function GameClient() {
     : 0;
   const activeSubscription = subscriptionPayments.some((payment) => {
     if (payment.status !== 'approved') return false;
+    if (payment.gcash_reference.startsWith('ADMIN-UNTIL-')) {
+      const expiresAt = Number(
+        payment.gcash_reference.slice('ADMIN-UNTIL-'.length),
+      );
+      return Number.isFinite(expiresAt) && accessNow < expiresAt;
+    }
+    if (payment.gcash_reference.startsWith('ADMIN-')) return true;
     const approvedAt = new Date(
       payment.reviewed_at ?? payment.submitted_at,
     ).getTime();

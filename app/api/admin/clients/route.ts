@@ -5,6 +5,8 @@ type CreateClientRequest = {
   parentEmail?: string;
   childName?: string;
   birthDate?: string;
+  accessUnit?: 'days' | 'months' | 'permanent';
+  accessLength?: number;
 };
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
@@ -50,6 +52,8 @@ export async function POST(request: Request) {
   const parentEmail = body.parentEmail?.trim().toLowerCase() ?? '';
   const childName = body.childName?.trim() ?? '';
   const birthDate = body.birthDate ?? '';
+  const accessUnit = body.accessUnit ?? 'permanent';
+  const accessLength = Number(body.accessLength ?? 1);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail))
     return json({ error: 'Enter a valid parent email.' }, 400);
   if (!/^[\p{L}][\p{L}' -]{0,39}$/u.test(childName))
@@ -57,6 +61,12 @@ export async function POST(request: Request) {
   const birthday = new Date(`${birthDate}T00:00:00Z`);
   if (!birthDate || Number.isNaN(birthday.valueOf()) || birthday > new Date())
     return json({ error: 'Enter a valid birthday.' }, 400);
+  if (
+    !['days', 'months', 'permanent'].includes(accessUnit) ||
+    (accessUnit !== 'permanent' &&
+      (!Number.isInteger(accessLength) || accessLength < 1 || accessLength > 3650))
+  )
+    return json({ error: 'Enter a valid access duration.' }, 400);
 
   const firstName =
     childName
@@ -113,14 +123,24 @@ export async function POST(request: Request) {
     return json({ error: profileError.message }, 400);
   }
 
+  const grantedAt = new Date();
+  const expiresAt = new Date(grantedAt);
+  if (accessUnit === 'days')
+    expiresAt.setUTCDate(expiresAt.getUTCDate() + accessLength);
+  if (accessUnit === 'months')
+    expiresAt.setUTCMonth(expiresAt.getUTCMonth() + accessLength);
+  const grantReference =
+    accessUnit === 'permanent'
+      ? `ADMIN-PERM-${grantedAt.toISOString().slice(0, 10)}`
+      : `ADMIN-UNTIL-${expiresAt.getTime()}`;
   const { error: paymentError } = await admin
     .from('subscription_payments')
     .insert({
       parent_id: created.user.id,
       amount: 300,
-      gcash_reference: `ADMIN-${new Date().toISOString().slice(0, 10)}`,
+      gcash_reference: grantReference,
       status: 'approved',
-      reviewed_at: new Date().toISOString(),
+      reviewed_at: grantedAt.toISOString(),
     });
   if (paymentError) {
     await admin
@@ -131,5 +151,16 @@ export async function POST(request: Request) {
     return json({ error: paymentError.message }, 400);
   }
 
-  return json({ parentEmail, childName, temporaryPassword: password }, 201);
+  return json(
+    {
+      parentEmail,
+      childName,
+      temporaryPassword: password,
+      access:
+        accessUnit === 'permanent'
+          ? 'permanent-free'
+          : expiresAt.toISOString(),
+    },
+    201,
+  );
 }
