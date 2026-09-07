@@ -632,6 +632,7 @@ export function GameClient() {
       {view === 'settings' && (
         <SettingsView
           save={save}
+          user={cloudUser}
           update={update}
           back={() => setView('home')}
           upload={() => fileRef.current?.click()}
@@ -1932,6 +1933,7 @@ function AccountView({
 }
 function SettingsView({
   save,
+  user,
   update,
   back,
   upload,
@@ -1939,12 +1941,56 @@ function SettingsView({
   reset,
 }: {
   save: SaveData;
+  user: User | null;
   update: (f: (s: SaveData) => SaveData) => void;
   back: () => void;
   upload: () => void;
   cartoon: () => void;
   reset: () => void;
 }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const changePassword = async (event: FormEvent) => {
+    event.preventDefault();
+    const cloud = getCloudClient();
+    if (!cloud || !user?.email) return;
+    if (newPassword.length < 8) {
+      setPasswordMessage('The new password must contain at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage('The new passwords do not match.');
+      return;
+    }
+    if (currentPassword === newPassword) {
+      setPasswordMessage('Choose a password different from the current one.');
+      return;
+    }
+    setChangingPassword(true);
+    setPasswordMessage('Checking your current password…');
+    const login = await cloud.auth.signInWithPassword({
+      email: user.email,
+      password: currentPassword,
+    });
+    if (login.error) {
+      setChangingPassword(false);
+      setPasswordMessage('The current password is incorrect.');
+      return;
+    }
+    const { error } = await cloud.auth.updateUser({ password: newPassword });
+    setChangingPassword(false);
+    if (error) {
+      setPasswordMessage(error.message);
+      return;
+    }
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setPasswordMessage('Password changed successfully ✓');
+  };
   return (
     <section className="page inner-page settings-page">
       <button className="back" onClick={back}>
@@ -1955,7 +2001,7 @@ function SettingsView({
         <div>
           <p className="eyebrow">Grown-ups can help here</p>
           <h1>Settings</h1>
-          <p>Everything is saved only on this device.</p>
+          <p>Your progress is securely saved to your account.</p>
         </div>
       </div>
       <div className="settings-card">
@@ -2004,6 +2050,53 @@ function SettingsView({
           />
         </label>
         <hr />
+        {user && (
+          <form className="user-password-form" onSubmit={changePassword}>
+            <div>
+              <b>🔐 Change Password</b>
+              <p>Update the password used to sign in to this parent account.</p>
+            </div>
+            <label>
+              Current password
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </label>
+            <label>
+              New password
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                autoComplete="new-password"
+                minLength={8}
+                required
+              />
+            </label>
+            <label>
+              Confirm new password
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                autoComplete="new-password"
+                minLength={8}
+                required
+              />
+            </label>
+            <Button type="submit" disabled={changingPassword}>
+              {changingPassword ? 'Changing Password…' : 'Change Password'}
+            </Button>
+            {passwordMessage && (
+              <output className="password-message">{passwordMessage}</output>
+            )}
+          </form>
+        )}
+        {user && <hr />}
         <div className="reset-row">
           <div>
             <b>Start Fresh</b>
