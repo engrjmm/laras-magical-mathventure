@@ -156,7 +156,8 @@ export function GameClient() {
     [subscriptionPayments, setSubscriptionPayments] = useState<
       SubscriptionPayment[]
     >([]),
-    [childGateDismissed, setChildGateDismissed] = useState(false);
+    [childGateDismissed, setChildGateDismissed] = useState(false),
+    [accessNow, setAccessNow] = useState(() => Date.now());
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const s = loadSave();
@@ -254,6 +255,15 @@ export function GameClient() {
   useEffect(() => {
     setChildGateDismissed(false);
   }, [cloudUser?.id]);
+  useEffect(() => {
+    const updateClock = () => setAccessNow(Date.now());
+    const timer = window.setInterval(updateClock, 30_000);
+    document.addEventListener('visibilitychange', updateClock);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', updateClock);
+    };
+  }, []);
   useEffect(() => {
     const cloud = getCloudClient();
     if (!cloudUser || !cloud) {
@@ -597,16 +607,16 @@ export function GameClient() {
   const trialEndsAt = cloudUser
     ? new Date(cloudUser.created_at).getTime() + TRIAL_DURATION_MS
     : 0;
-  const trialActive = Boolean(cloudUser && Date.now() < trialEndsAt);
+  const trialActive = Boolean(cloudUser && accessNow < trialEndsAt);
   const trialDaysRemaining = trialActive
-    ? Math.max(1, Math.ceil((trialEndsAt - Date.now()) / DAY_MS))
+    ? Math.max(1, Math.ceil((trialEndsAt - accessNow) / DAY_MS))
     : 0;
   const activeSubscription = subscriptionPayments.some((payment) => {
     if (payment.status !== 'approved') return false;
     const approvedAt = new Date(
       payment.reviewed_at ?? payment.submitted_at,
     ).getTime();
-    return Date.now() - approvedAt < PAID_ACCESS_DURATION_MS;
+    return accessNow - approvedAt < PAID_ACCESS_DURATION_MS;
   });
   if (cloudUser && !isAdministrator && !trialActive && !activeSubscription)
     return (
@@ -881,6 +891,9 @@ function SubscriptionGate({
   const [status, setStatus] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const pending = payments.find((payment) => payment.status === 'pending');
+  const hadApprovedAccess = payments.some(
+    (payment) => payment.status === 'approved',
+  );
   const submitPayment = async (event: FormEvent) => {
     event.preventDefault();
     const cloud = getCloudClient();
@@ -921,7 +934,11 @@ function SubscriptionGate({
           <div>
             <p className="eyebrow">Magical Mathventure membership</p>
             <h1>
-              {pending ? 'Waiting for approval' : 'Activate your account'}
+              {pending
+                ? 'Waiting for approval'
+                : hadApprovedAccess
+                  ? 'Your access has expired'
+                  : 'Your free trial has ended'}
             </h1>
             <p>{user.email}</p>
           </div>
