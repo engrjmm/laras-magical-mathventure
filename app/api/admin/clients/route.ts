@@ -12,6 +12,72 @@ type CreateClientRequest = {
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 
+async function authorizedAdmin(request: Request) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const adminEmail = (
+    process.env.ADMIN_EMAIL ?? process.env.NEXT_PUBLIC_ADMIN_EMAIL
+  )?.toLowerCase();
+  if (!url || !publishableKey || !serviceRoleKey || !adminEmail) return null;
+  const bearer = request.headers.get('authorization');
+  const accessToken = bearer?.startsWith('Bearer ') ? bearer.slice(7) : '';
+  if (!accessToken) return null;
+  const verifier = createClient(url, publishableKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data } = await verifier.auth.getUser(accessToken);
+  if (data.user?.email?.toLowerCase() !== adminEmail) return null;
+  return {
+    admin: createClient(url, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    }),
+    adminEmail,
+  };
+}
+
+export async function GET(request: Request) {
+  const context = await authorizedAdmin(request);
+  if (!context) return json({ error: 'Administrator access required.' }, 403);
+  const { data, error } = await context.admin.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
+  if (error) return json({ error: error.message }, 400);
+  return json({
+    accounts: data.users.map((account) => ({
+      id: account.id,
+      email: account.email ?? 'Email unavailable',
+      createdAt: account.created_at,
+      confirmedAt: account.email_confirmed_at ?? null,
+    })),
+  });
+}
+
+export async function PATCH(request: Request) {
+  const context = await authorizedAdmin(request);
+  if (!context) return json({ error: 'Administrator access required.' }, 403);
+  const body = (await request.json().catch(() => null)) as {
+    parentId?: string;
+  } | null;
+  if (!body?.parentId) return json({ error: 'Client is required.' }, 400);
+  const now = new Date().toISOString();
+  const { data: payment, error } = await context.admin
+    .from('subscription_payments')
+    .insert({
+      parent_id: body.parentId,
+      amount: 300,
+      gcash_reference: `ADMIN-REVOKED-${Date.now()}`,
+      status: 'approved',
+      reviewed_at: now,
+    })
+    .select('*')
+    .single();
+  return error
+    ? json({ error: error.message }, 400)
+    : json({ payment, access: 'revoked' });
+}
+
 export async function POST(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;

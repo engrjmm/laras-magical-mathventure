@@ -17,6 +17,12 @@ type Payment = {
   reviewed_at: string | null;
 };
 type Tab = 'overview' | 'clients' | 'payments' | 'settings';
+type RegisteredAccount = {
+  id: string;
+  email: string;
+  createdAt: string;
+  confirmedAt: string | null;
+};
 type AccessDetails = {
   status: 'trial' | 'active' | 'pending' | 'expired';
   label: string;
@@ -41,6 +47,13 @@ const accessDetailsFor = (
     )[0];
   if (approved) {
     const activatedAt = new Date(approved.reviewed_at ?? approved.submitted_at);
+    if (approved.gcash_reference.startsWith('ADMIN-REVOKED-'))
+      return {
+        status: 'expired',
+        label: 'Access removed',
+        activatedAt: null,
+        expiresAt: null,
+      };
     if (approved.gcash_reference.startsWith('ADMIN-UNTIL-')) {
       const expiresAt = new Date(
         Number(approved.gcash_reference.slice('ADMIN-UNTIL-'.length)),
@@ -82,6 +95,9 @@ export function AdminDashboard() {
     [password, setPassword] = useState(''),
     [payments, setPayments] = useState<Payment[]>([]),
     [clients, setClients] = useState<ChildProfile[]>([]),
+    [registeredAccounts, setRegisteredAccounts] = useState<RegisteredAccount[]>(
+      [],
+    ),
     [tab, setTab] = useState<Tab>('overview'),
     [message, setMessage] = useState(''),
     [currentAdminPassword, setCurrentAdminPassword] = useState(''),
@@ -106,7 +122,8 @@ export function AdminDashboard() {
   const refresh = async () => {
     const cloud = getCloudClient();
     if (!cloud || !isAdmin) return;
-    const [paymentResult, clientResult] = await Promise.all([
+    const { data: sessionData } = await cloud.auth.getSession();
+    const [paymentResult, clientResult, accountResponse] = await Promise.all([
       cloud
         .from('subscription_payments')
         .select('*')
@@ -115,6 +132,11 @@ export function AdminDashboard() {
         .from('child_profiles')
         .select('*')
         .order('updated_at', { ascending: false }),
+      fetch('/api/admin/clients', {
+        headers: {
+          Authorization: `Bearer ${sessionData.session?.access_token ?? ''}`,
+        },
+      }),
     ]);
     if (paymentResult.error || clientResult.error)
       return setMessage(
@@ -131,6 +153,12 @@ export function AdminDashboard() {
     );
     setPayments(enriched);
     setClients((clientResult.data ?? []) as ChildProfile[]);
+    if (accountResponse.ok) {
+      const accountResult = (await accountResponse.json()) as {
+        accounts?: RegisteredAccount[];
+      };
+      setRegisteredAccounts(accountResult.accounts ?? []);
+    }
   };
   useEffect(() => {
     const cloud = getCloudClient();
@@ -157,6 +185,24 @@ export function AdminDashboard() {
       .eq('id', id);
     if (error) setMessage(error.message);
     else await refresh();
+  };
+  const removeAccess = async (parentId: string, childName: string) => {
+    if (!window.confirm(`Remove ${childName}’s access to the app?`)) return;
+    const cloud = getCloudClient();
+    const { data } = await cloud!.auth.getSession();
+    const response = await fetch('/api/admin/clients', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${data.session?.access_token ?? ''}`,
+      },
+      body: JSON.stringify({ parentId }),
+    });
+    const result = (await response.json()) as { error?: string };
+    setMessage(
+      response.ok ? `${childName}’s access was removed.` : result.error ?? 'Failed.',
+    );
+    if (response.ok) await refresh();
   };
   const changeAdminPassword = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -363,7 +409,11 @@ export function AdminDashboard() {
             </div>
             <div className="admin-panel">
               <h2>Recent payment activity</h2>
-              <PaymentTable payments={payments.slice(0, 5)} review={review} />
+              <PaymentTable
+                payments={payments.slice(0, 5)}
+                clients={clients}
+                review={review}
+              />
             </div>
           </>
         )}
@@ -468,7 +518,39 @@ export function AdminDashboard() {
                   <b>Correct</b>
                   <b>Problems</b>
                   <b>Last active</b>
+                  <b>Action</b>
                 </div>
+                <div>
+                  <span>{user.email}</span>
+                  <b>Administrator</b>
+                  <strong className="access-pill" data-status="active">
+                    Full access
+                  </strong>
+                  <span>—</span><span>Never</span><span>—</span><span>—</span><span>—</span><span>Protected</span>
+                </div>
+                {registeredAccounts
+                  .filter(
+                    (account) =>
+                      account.email.toLowerCase() !== user.email?.toLowerCase() &&
+                      !clients.some((client) => client.parent_id === account.id),
+                  )
+                  .map((account) => (
+                    <div key={account.id}>
+                      <span>{account.email}</span>
+                      <b>Profile not created</b>
+                      <strong className="access-pill" data-status="pending">
+                        Awaiting setup
+                      </strong>
+                      <span>{new Date(account.createdAt).toLocaleDateString()}</span>
+                      <span>—</span><span>—</span><span>—</span><span>—</span>
+                      <button
+                        className="remove-access"
+                        onClick={() => void removeAccess(account.id, account.email)}
+                      >
+                        Remove Access
+                      </button>
+                    </div>
+                  ))}
                 {clients.map((client) => {
                   const access = accessDetailsFor(
                     client,
@@ -502,6 +584,14 @@ export function AdminDashboard() {
                       <span>
                         {new Date(client.updated_at).toLocaleDateString()}
                       </span>
+                      <button
+                        className="remove-access"
+                        onClick={() =>
+                          void removeAccess(client.parent_id, client.name)
+                        }
+                      >
+                        Remove Access
+                      </button>
                     </div>
                   );
                 })}
@@ -512,7 +602,7 @@ export function AdminDashboard() {
         {tab === 'payments' && (
           <div className="admin-panel">
             <h2>GCash payment submissions</h2>
-            <PaymentTable payments={payments} review={review} />
+            <PaymentTable payments={payments} clients={clients} review={review} />
           </div>
         )}
         {tab === 'settings' && (
@@ -652,17 +742,21 @@ function AdminLogin({
 
 function PaymentTable({
   payments,
+  clients,
   review,
 }: {
   payments: Payment[];
+  clients: ChildProfile[];
   review: (id: string, status: 'approved' | 'rejected') => Promise<void>;
 }) {
+  const [zoomedReceipt, setZoomedReceipt] = useState<string | null>(null);
   if (!payments.length)
     return <div className="admin-empty">No payment submissions yet.</div>;
   return (
     <div className="admin-payment-table">
       <div className="table-header">
         <b>Date</b>
+        <b>Parent email</b>
         <b>Reference</b>
         <b>Receipt</b>
         <b>Amount</b>
@@ -672,17 +766,27 @@ function PaymentTable({
       {payments.map((payment) => (
         <div key={payment.id}>
           <span>{new Date(payment.submitted_at).toLocaleDateString()}</span>
+          <span>
+            {clients.find((client) => client.parent_id === payment.parent_id)
+              ?.parent_email ?? 'Email unavailable'}
+          </span>
           <b>
-            {payment.gcash_reference.startsWith('ADMIN-')
-              ? 'Admin-granted access'
-              : payment.gcash_reference}
+            {payment.gcash_reference.startsWith('ADMIN-REVOKED-')
+              ? 'Access removed by admin'
+              : payment.gcash_reference.startsWith('ADMIN-')
+                ? 'Admin-granted access'
+                : payment.gcash_reference}
           </b>
           <span>
             {payment.receipt_url ? (
-              <a href={payment.receipt_url} target="_blank" rel="noreferrer">
+              <button
+                className="receipt-preview"
+                onClick={() => setZoomedReceipt(payment.receipt_url!)}
+                aria-label="Zoom payment receipt"
+              >
                 <img src={payment.receipt_url} alt="GCash payment receipt" />
-                View
-              </a>
+                <span>Click to zoom</span>
+              </button>
             ) : (
               'No screenshot'
             )}
@@ -709,6 +813,22 @@ function PaymentTable({
           </span>
         </div>
       ))}
+      {zoomedReceipt && (
+        <div
+          className="receipt-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Payment receipt preview"
+          onClick={() => setZoomedReceipt(null)}
+        >
+          <button aria-label="Close receipt preview">×</button>
+          <img
+            src={zoomedReceipt}
+            alt="Enlarged GCash payment receipt"
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

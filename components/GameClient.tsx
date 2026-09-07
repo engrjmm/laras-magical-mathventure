@@ -656,8 +656,19 @@ export function GameClient() {
   const trialDaysRemaining = trialActive
     ? Math.max(1, Math.ceil((trialEndsAt - accessNow) / DAY_MS))
     : 0;
-  const activeSubscription = subscriptionPayments.some((payment) => {
-    if (payment.status !== 'approved') return false;
+  const latestApprovedPayment = subscriptionPayments
+    .filter((payment) => payment.status === 'approved')
+    .sort(
+      (a, b) =>
+        new Date(b.reviewed_at ?? b.submitted_at).getTime() -
+        new Date(a.reviewed_at ?? a.submitted_at).getTime(),
+    )[0];
+  const accessRevoked = Boolean(
+    latestApprovedPayment?.gcash_reference.startsWith('ADMIN-REVOKED-'),
+  );
+  const activeSubscription = (() => {
+    const payment = latestApprovedPayment;
+    if (!payment || accessRevoked) return false;
     if (payment.gcash_reference.startsWith('ADMIN-UNTIL-')) {
       const expiresAt = Number(
         payment.gcash_reference.slice('ADMIN-UNTIL-'.length),
@@ -669,8 +680,12 @@ export function GameClient() {
       payment.reviewed_at ?? payment.submitted_at,
     ).getTime();
     return accessNow - approvedAt < PAID_ACCESS_DURATION_MS;
-  });
-  if (cloudUser && !isAdministrator && !trialActive && !activeSubscription)
+  })();
+  if (
+    cloudUser &&
+    !isAdministrator &&
+    (accessRevoked || (!trialActive && !activeSubscription))
+  )
     return (
       <SubscriptionGate
         user={cloudUser}
@@ -1082,20 +1097,59 @@ function LoginGate({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [childName, setChildName] = useState('');
+  const [authChoice, setAuthChoice] = useState<'choose' | 'login' | 'register'>(
+    'choose',
+  );
   return (
     <main className="login-page">
       <section className="login-card">
         <div className="login-mark">🧠</div>
         <p className="eyebrow">Welcome to</p>
         <h1>Magical Mathventure</h1>
-        <p>Sign in to continue your child’s learning adventure.</p>
-        <p className="trial-note">New accounts include a free 2-day trial.</p>
+        {authChoice === 'choose' ? (
+          <>
+            <p>Choose how you would like to continue.</p>
+            <div className="auth-choice-grid">
+              <button
+                className="magic-button"
+                onClick={() => setAuthChoice('login')}
+              >
+                <span>🔑</span>
+                <b>I Have an Account</b>
+                <small>Sign in and continue the adventure</small>
+              </button>
+              <button onClick={() => setAuthChoice('register')}>
+                <span>✨</span>
+                <b>Create an Account</b>
+                <small>Start with a free 2-day trial</small>
+              </button>
+            </div>
+          </>
+        ) : (
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            void authenticate(email.trim(), password, false);
+            void authenticate(
+              email.trim(),
+              password,
+              authChoice === 'register',
+              authChoice === 'register' ? childName.trim() : undefined,
+            );
           }}
         >
+          <div className="auth-form-heading">
+            <button type="button" onClick={() => setAuthChoice('choose')}>
+              ← Back
+            </button>
+            <b>
+              {authChoice === 'login'
+                ? 'Sign in to your account'
+                : 'Create a parent account'}
+            </b>
+          </div>
+          {authChoice === 'register' && (
+            <p className="trial-note">Includes a free 2-day trial.</p>
+          )}
           <label>
             Parent email
             <input
@@ -1117,30 +1171,24 @@ function LoginGate({
               required
             />
           </label>
-          <label>
-            Child’s name (required for registration)
-            <input
-              value={childName}
-              onChange={(event) => setChildName(event.target.value)}
-              maxLength={40}
-              autoComplete="off"
-              placeholder="Enter your child’s name"
-            />
-          </label>
+          {authChoice === 'register' && (
+            <label>
+              Child’s name
+              <input
+                value={childName}
+                onChange={(event) => setChildName(event.target.value)}
+                maxLength={40}
+                autoComplete="off"
+                placeholder="Enter your child’s name"
+                required
+              />
+            </label>
+          )}
           <button className="magic-button" type="submit">
-            Sign In
+            {authChoice === 'login' ? 'Sign In' : 'Create Parent Account'}
           </button>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!childName.trim()}
-            onClick={() =>
-              void authenticate(email.trim(), password, true, childName.trim())
-            }
-          >
-            Create Parent Account
-          </Button>
         </form>
+        )}
         {message && <p className="cloud-message">{message}</p>}
       </section>
     </main>
