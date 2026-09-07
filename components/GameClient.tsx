@@ -335,6 +335,17 @@ export function GameClient() {
   useEffect(() => {
     const cloud = getCloudClient();
     if (!ready || !cloudUser || !activeProfileId || !cloud) return;
+    setProfiles((items) =>
+      items.map((profile) =>
+        profile.id === activeProfileId
+          ? {
+              ...profile,
+              name: save.player.name,
+              save_data: { ...save, question: q },
+            }
+          : profile,
+      ),
+    );
     const timer = window.setTimeout(async () => {
       const { error } = await cloud
         .from('child_profiles')
@@ -349,6 +360,40 @@ export function GameClient() {
     }, 900);
     return () => window.clearTimeout(timer);
   }, [save, q, ready, cloudUser, activeProfileId]);
+  useEffect(() => {
+    if (!subscriptionChecked || !activeProfileId) return;
+    const adminAdded = subscriptionPayments.some(
+      (payment) =>
+        payment.status === 'approved' &&
+        payment.gcash_reference.startsWith('ADMIN-'),
+    );
+    const unlockedNames = new Set(Object.keys(save.rewards.treasures));
+    if (!adminAdded || unlockedNames.size >= 10) return;
+    const available = TREASURES.filter(
+      (treasure) =>
+        treasure.rarity === 'Common' && !unlockedNames.has(treasure.name),
+    );
+    for (let index = available.length - 1; index > 0; index--) {
+      const randomIndex = Math.floor(Math.random() * (index + 1));
+      [available[index], available[randomIndex]] = [
+        available[randomIndex],
+        available[index],
+      ];
+    }
+    const needed = 10 - unlockedNames.size;
+    setSave((current) => {
+      const next = structuredClone(current);
+      available.slice(0, needed).forEach((treasure) => {
+        next.rewards.treasures[treasure.name] = 1;
+      });
+      return next;
+    });
+  }, [
+    subscriptionChecked,
+    subscriptionPayments,
+    activeProfileId,
+    save.rewards.treasures,
+  ]);
   const update = (fn: (s: SaveData) => SaveData) =>
     setSave((s) => fn(structuredClone(s)));
   const chooseMode = (mode: Mode) => {
