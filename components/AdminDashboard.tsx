@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
-import { BarChart3, CreditCard, Settings, Users } from 'lucide-react';
+import { BarChart3, CreditCard, Settings, UserPlus, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getCloudClient, type ChildProfile } from '@/lib/cloud';
 
@@ -28,7 +28,15 @@ export function AdminDashboard() {
     [message, setMessage] = useState(''),
     [currentAdminPassword, setCurrentAdminPassword] = useState(''),
     [newAdminPassword, setNewAdminPassword] = useState(''),
-    [confirmAdminPassword, setConfirmAdminPassword] = useState('');
+    [confirmAdminPassword, setConfirmAdminPassword] = useState(''),
+    [manualEmail, setManualEmail] = useState(''),
+    [manualChildName, setManualChildName] = useState(''),
+    [manualBirthDate, setManualBirthDate] = useState(''),
+    [manualCreating, setManualCreating] = useState(false),
+    [createdLogin, setCreatedLogin] = useState<{
+      email: string;
+      password: string;
+    } | null>(null);
   const isAdmin =
     user?.email?.toLowerCase() ===
     process.env.NEXT_PUBLIC_ADMIN_EMAIL?.toLowerCase();
@@ -117,6 +125,46 @@ export function AdminDashboard() {
       setConfirmAdminPassword('');
       setMessage('Administrator password changed successfully ✓');
     }
+  };
+  const createClientManually = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const cloud = getCloudClient();
+    if (!cloud || !isAdmin) return;
+    setManualCreating(true);
+    setCreatedLogin(null);
+    setMessage('');
+    const { data } = await cloud.auth.getSession();
+    const response = await fetch('/api/admin/clients', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${data.session?.access_token ?? ''}`,
+      },
+      body: JSON.stringify({
+        parentEmail: manualEmail,
+        childName: manualChildName,
+        birthDate: manualBirthDate,
+      }),
+    });
+    const result = (await response.json()) as {
+      error?: string;
+      parentEmail?: string;
+      temporaryPassword?: string;
+    };
+    setManualCreating(false);
+    if (!response.ok || !result.parentEmail || !result.temporaryPassword) {
+      setMessage(result.error ?? 'Account creation failed.');
+      return;
+    }
+    setCreatedLogin({
+      email: result.parentEmail,
+      password: result.temporaryPassword,
+    });
+    setManualEmail('');
+    setManualChildName('');
+    setManualBirthDate('');
+    setMessage('Client account created and approved for 31 days ✓');
+    await refresh();
   };
   if (!checked)
     return (
@@ -227,27 +275,83 @@ export function AdminDashboard() {
           </>
         )}
         {tab === 'clients' && (
-          <div className="admin-panel">
-            <h2>Registered parents and children</h2>
-            <div className="client-table">
-              <div className="table-header">
-                <b>Parent email</b>
-                <b>Child</b>
-                <b>Correct</b>
-                <b>Problems</b>
-                <b>Last active</b>
-              </div>
-              {clients.map((client) => (
-                <div key={client.id}>
-                  <span>{client.parent_email ?? 'Email pending sync'}</span>
-                  <b>{client.name}</b>
-                  <span>{client.save_data.player.totalCorrect}</span>
-                  <span>{client.save_data.player.problemsSolved}</span>
-                  <span>
-                    {new Date(client.updated_at).toLocaleDateString()}
-                  </span>
+          <div className="admin-client-layout">
+            <form
+              className="admin-panel manual-client"
+              onSubmit={createClientManually}
+            >
+              <div className="panel-title">
+                <UserPlus />
+                <div>
+                  <h2>Add a client manually</h2>
+                  <p>Create one parent login and one child profile.</p>
                 </div>
-              ))}
+              </div>
+              <label>
+                Parent email
+                <input
+                  type="email"
+                  value={manualEmail}
+                  onChange={(event) => setManualEmail(event.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Child’s name
+                <input
+                  value={manualChildName}
+                  onChange={(event) => setManualChildName(event.target.value)}
+                  maxLength={40}
+                  required
+                />
+              </label>
+              <label>
+                Child’s birthday
+                <input
+                  type="date"
+                  value={manualBirthDate}
+                  onChange={(event) => setManualBirthDate(event.target.value)}
+                  required
+                />
+              </label>
+              <p className="password-rule">
+                The server creates the temporary password from the child’s first
+                name + birthday (MMDD). Example: Lara, September 17 → lara0917.
+              </p>
+              <Button type="submit" disabled={manualCreating}>
+                {manualCreating ? 'Creating…' : 'Create & Approve Client'}
+              </Button>
+              {createdLogin && (
+                <output className="created-login">
+                  <b>Give these login details to the parent:</b>
+                  <span>Email: {createdLogin.email}</span>
+                  <span>Temporary password: {createdLogin.password}</span>
+                  <small>This password is shown only after creation.</small>
+                </output>
+              )}
+            </form>
+            <div className="admin-panel">
+              <h2>Registered parents and children</h2>
+              <div className="client-table">
+                <div className="table-header">
+                  <b>Parent email</b>
+                  <b>Child</b>
+                  <b>Correct</b>
+                  <b>Problems</b>
+                  <b>Last active</b>
+                </div>
+                {clients.map((client) => (
+                  <div key={client.id}>
+                    <span>{client.parent_email ?? 'Email pending sync'}</span>
+                    <b>{client.name}</b>
+                    <span>{client.save_data.player.totalCorrect}</span>
+                    <span>{client.save_data.player.problemsSolved}</span>
+                    <span>
+                      {new Date(client.updated_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
