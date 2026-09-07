@@ -15,7 +15,6 @@ import {
   Shirt,
   Sparkles,
   Star,
-  UserRound,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -69,8 +68,9 @@ type SubscriptionPayment = {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TRIAL_DURATION_MS = 2 * DAY_MS;
 const PAID_ACCESS_DURATION_MS = 30 * DAY_MS;
+const DEVICE_SESSION_KEY = 'magical-mathventure-device-session';
 const feedback = [
-  'Correct, Lara! 🌟',
+  'Correct, {name}! 🌟',
   'Amazing work! ✨',
   'Math magic! 💖',
   'Fantastic thinking! 🌈',
@@ -155,7 +155,8 @@ export function GameClient() {
     [subscriptionChecked, setSubscriptionChecked] = useState(false),
     [subscriptionPayments, setSubscriptionPayments] = useState<
       SubscriptionPayment[]
-    >([]);
+    >([]),
+    [childGateDismissed, setChildGateDismissed] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const s = loadSave();
@@ -211,6 +212,50 @@ export function GameClient() {
   }, []);
   useEffect(() => {
     const cloud = getCloudClient();
+    if (!cloudUser || !cloud) return;
+    const verifyDevice = async () => {
+      const localSession = localStorage.getItem(DEVICE_SESSION_KEY);
+      const activeSession = cloudUser.user_metadata?.active_device_session as
+        | string
+        | undefined;
+      if (localSession && activeSession && localSession !== activeSession) {
+        await cloud.auth.signOut({ scope: 'local' });
+        setCloudUser(null);
+        setCloudMessage(
+          'This account was signed in on another device. Please sign in again to use this device.',
+        );
+        return;
+      }
+      if (!localSession || !activeSession) {
+        const deviceSession = crypto.randomUUID();
+        localStorage.setItem(DEVICE_SESSION_KEY, deviceSession);
+        const { data } = await cloud.auth.updateUser({
+          data: { active_device_session: deviceSession },
+        });
+        if (data.user) setCloudUser(data.user);
+      }
+    };
+    void verifyDevice();
+    const timer = window.setInterval(async () => {
+      const { data } = await cloud.auth.getUser();
+      const activeSession = data.user?.user_metadata
+        ?.active_device_session as string | undefined;
+      const localSession = localStorage.getItem(DEVICE_SESSION_KEY);
+      if (activeSession && localSession && activeSession !== localSession) {
+        await cloud.auth.signOut({ scope: 'local' });
+        setCloudUser(null);
+        setCloudMessage(
+          'This account was signed in on another device. Please sign in again to use this device.',
+        );
+      }
+    }, 10_000);
+    return () => window.clearInterval(timer);
+  }, [cloudUser?.id]);
+  useEffect(() => {
+    setChildGateDismissed(false);
+  }, [cloudUser?.id]);
+  useEffect(() => {
+    const cloud = getCloudClient();
     if (!cloudUser || !cloud) {
       setProfiles([]);
       setActiveProfileId(null);
@@ -230,8 +275,22 @@ export function GameClient() {
             .insert({
               parent_id: cloudUser.id,
               parent_email: cloudUser.email,
-              name: local.player.name || 'Child',
-              save_data: local,
+              name:
+                (cloudUser.user_metadata?.child_name as string | undefined) ||
+                local.player.name ||
+                'Child',
+              save_data: {
+                ...local,
+                player: {
+                  ...local.player,
+                  name:
+                    (cloudUser.user_metadata?.child_name as
+                      | string
+                      | undefined) ||
+                    local.player.name ||
+                    'Child',
+                },
+              },
             })
             .select('*')
             .single()
@@ -309,7 +368,9 @@ export function GameClient() {
     if (n !== q.answer) {
       const a = attempts + 1;
       setAttempts(a);
-      setMessage('Almost, Lara! 💛 Check your work and try again.');
+      setMessage(
+        `Almost, ${save.player.name}! 💛 Check your work and try again.`,
+      );
       if (a >= 2) setHint(hintFor(q, a));
       update((s) => {
         s.player.currentStreak = 0;
@@ -357,7 +418,12 @@ export function GameClient() {
       }
       return s;
     });
-    setMessage(feedback[rand(0, feedback.length - 1)]);
+    setMessage(
+      feedback[rand(0, feedback.length - 1)].replace(
+        '{name}',
+        save.player.name,
+      ),
+    );
     setTimeout(
       () =>
         showReward
@@ -425,6 +491,7 @@ export function GameClient() {
     email: string,
     password: string,
     register: boolean,
+    childName?: string,
   ) => {
     const cloud = getCloudClient();
     if (!cloud) return setCloudMessage('Cloud setup is not connected yet.');
@@ -433,9 +500,20 @@ export function GameClient() {
       ? await cloud.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: window.location.origin },
+          options: {
+            emailRedirectTo: window.location.origin,
+            data: { child_name: childName?.trim() },
+          },
         })
       : await cloud.auth.signInWithPassword({ email, password });
+    if (!result.error && result.data.session && result.data.user) {
+      const deviceSession = crypto.randomUUID();
+      localStorage.setItem(DEVICE_SESSION_KEY, deviceSession);
+      const updated = await cloud.auth.updateUser({
+        data: { active_device_session: deviceSession },
+      });
+      if (updated.data.user) setCloudUser(updated.data.user);
+    }
     setCloudMessage(
       result.error
         ? result.error.message
@@ -484,6 +562,7 @@ export function GameClient() {
   };
   const signOut = async () => {
     await getCloudClient()?.auth.signOut();
+    localStorage.removeItem(DEVICE_SESSION_KEY);
     setCloudMessage('Signed out. Progress remains saved on this device.');
   };
   const upload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -538,6 +617,21 @@ export function GameClient() {
         signOut={signOut}
       />
     );
+  if (cloudUser && !isAdministrator && !activeProfileId)
+    return (
+      <main className="loading">
+        <div>✨</div>
+        <h1>Preparing your child’s adventure…</h1>
+      </main>
+    );
+  if (cloudUser && !isAdministrator && !childGateDismissed)
+    return (
+      <ChildWelcome
+        save={save}
+        continueAdventure={() => setChildGateDismissed(true)}
+        useAnotherAccount={signOut}
+      />
+    );
   return (
     <main className="app-shell">
       <div className="sky-decor" aria-hidden>
@@ -586,6 +680,7 @@ export function GameClient() {
       {view === 'table-list' && (
         <TimesTableList
           tables={save.practice.selectedTables}
+          childName={save.player.name}
           back={() => setView('modes')}
           record={recordTableList}
         />
@@ -633,6 +728,7 @@ export function GameClient() {
         <SettingsView
           save={save}
           user={cloudUser}
+          signOut={signOut}
           update={update}
           back={() => setView('home')}
           upload={() => fileRef.current?.click()}
@@ -659,7 +755,7 @@ export function GameClient() {
           <DialogHeader>
             <DialogTitle>✨ You found something!</DialogTitle>
             <DialogDescription>
-              A magical surprise joined your collection, Lara.
+              A magical surprise joined {save.player.name}’s collection.
             </DialogDescription>
           </DialogHeader>
           {reward && (
@@ -682,8 +778,8 @@ export function GameClient() {
           <DialogHeader>
             <DialogTitle>Adventure Complete!</DialogTitle>
             <DialogDescription>
-              Lara explored the {save.adventure.world}! You can keep adventuring
-              forever.
+              {save.player.name} explored the {save.adventure.world}! You can
+              keep adventuring forever.
             </DialogDescription>
           </DialogHeader>
           <Button className="magic-button" onClick={nextAdventure}>
@@ -701,7 +797,7 @@ export function GameClient() {
             </DialogTitle>
             <DialogDescription>
               {confirmReset
-                ? 'This will erase Lara’s adventures, treasures, avatar settings and learning progress stored on this device.'
+                ? `This will erase ${save.player.name}’s adventures, treasures, avatar settings and learning progress stored on this device.`
                 : 'You’ll be asked once more before anything is erased.'}
             </DialogDescription>
           </DialogHeader>
@@ -737,6 +833,35 @@ export function GameClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </main>
+  );
+}
+function ChildWelcome({
+  save,
+  continueAdventure,
+  useAnotherAccount,
+}: {
+  save: SaveData;
+  continueAdventure: () => void;
+  useAnotherAccount: () => Promise<void>;
+}) {
+  return (
+    <main className="child-welcome-page">
+      <section className="child-welcome-card">
+        <p className="eyebrow">Welcome back</p>
+        <h1>Who’s ready for a math adventure?</h1>
+        <button className="child-login" onClick={continueAdventure}>
+          <Avatar save={save} />
+          <strong>{save.player.name}</strong>
+          <span>Tap to continue ✨</span>
+        </button>
+        <button
+          className="another-account"
+          onClick={() => void useAnotherAccount()}
+        >
+          Use another parent account
+        </button>
+      </section>
     </main>
   );
 }
@@ -881,11 +1006,13 @@ function LoginGate({
     email: string,
     password: string,
     register: boolean,
+    childName?: string,
   ) => Promise<void>;
   message: string;
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [childName, setChildName] = useState('');
   return (
     <main className="login-page">
       <section className="login-card">
@@ -921,13 +1048,26 @@ function LoginGate({
               required
             />
           </label>
+          <label>
+            Child’s name (required for registration)
+            <input
+              value={childName}
+              onChange={(event) => setChildName(event.target.value)}
+              maxLength={40}
+              autoComplete="off"
+              placeholder="Enter your child’s name"
+            />
+          </label>
           <button className="magic-button" type="submit">
             Sign In
           </button>
           <Button
             type="button"
             variant="outline"
-            onClick={() => void authenticate(email.trim(), password, true)}
+            disabled={!childName.trim()}
+            onClick={() =>
+              void authenticate(email.trim(), password, true, childName.trim())
+            }
           >
             Create Parent Account
           </Button>
@@ -947,9 +1087,15 @@ function Avatar({
   return (
     <div className={`avatar ${size}`}>
       {save.player.avatarType === 'photo' && save.player.avatar ? (
-        <img src={save.player.avatar} alt="Lara’s uploaded avatar" />
+        <img
+          src={save.player.avatar}
+          alt={`${save.player.name}’s uploaded avatar`}
+        />
       ) : (
-        <span role="img" aria-label="Lara’s cute cartoon adventurer avatar">
+        <span
+          role="img"
+          aria-label={`${save.player.name}’s cute cartoon adventurer avatar`}
+        >
           👧🏻
         </span>
       )}
@@ -1020,7 +1166,6 @@ function HomeView({ save, go }: { save: SaveData; go: (v: View) => void }) {
           [Shirt, 'My Closet', 'closet'],
           [Star, 'Adventure Buddy', 'buddy'],
           [BookOpen, `${save.player.name}'s Profile`, 'profile'],
-          [UserRound, 'Parent Account', 'account'],
           [Settings, 'Settings', 'settings'],
         ].map(([Icon, label, to], i) => {
           const C = Icon as typeof Home;
@@ -1063,7 +1208,10 @@ function Modes({
         <div>
           <p className="eyebrow">Choose your path</p>
           <h1>What shall we practice?</h1>
-          <p>Every adventure is open, Lara. Take all the time you need.</p>
+          <p>
+            Every adventure is open, {save.player.name}. Take all the time you
+            need.
+          </p>
         </div>
       </div>
       <div className="subject-sections">
@@ -1157,10 +1305,12 @@ function Modes({
 }
 function TimesTableList({
   tables,
+  childName,
   back,
   record,
 }: {
   tables: number[];
+  childName: string;
   back: () => void;
   record: (correct: number, total: number) => void;
 }) {
@@ -1235,7 +1385,9 @@ function TimesTableList({
           ) : (
             <div className="list-result">
               <strong>{recordedScore}/10</strong>
-              <span>Score saved! Wonderful honest checking, Lara. 💖</span>
+              <span>
+                Score saved! Wonderful honest checking, {childName}. 💖
+              </span>
               <button className="magic-button" onClick={() => reset()}>
                 Try This Table Again
               </button>
@@ -1360,7 +1512,7 @@ function Treasures({ save, back }: { save: SaveData; back: () => void }) {
       <div className="section-heading">
         <span>📖</span>
         <div>
-          <p className="eyebrow">Lara’s collection</p>
+          <p className="eyebrow">{save.player.name}’s collection</p>
           <h1>Magical Treasure Book</h1>
           <p>
             {found} / {TREASURES.length} treasures discovered
@@ -1395,7 +1547,7 @@ function Closet({
     <Picker
       title="My Closet"
       icon="🎀"
-      note="Choose something magical for Lara to wear."
+      note={`Choose something magical for ${save.player.name} to wear.`}
       back={back}
       preview={<Avatar save={save} />}
       items={accessories}
@@ -1650,7 +1802,7 @@ function AccountView({
   };
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [childName, setChildName] = useState('Lara');
+  const [childName, setChildName] = useState('Child');
   const [gcashReference, setGcashReference] = useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -1934,6 +2086,7 @@ function AccountView({
 function SettingsView({
   save,
   user,
+  signOut,
   update,
   back,
   upload,
@@ -1942,6 +2095,7 @@ function SettingsView({
 }: {
   save: SaveData;
   user: User | null;
+  signOut: () => Promise<void>;
   update: (f: (s: SaveData) => SaveData) => void;
   back: () => void;
   upload: () => void;
@@ -1953,6 +2107,28 @@ function SettingsView({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordMessage, setPasswordMessage] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
+  const [childName, setChildName] = useState(save.player.name);
+  const [nameMessage, setNameMessage] = useState('');
+  const saveChildName = async (event: FormEvent) => {
+    event.preventDefault();
+    const cleanName = childName.trim();
+    if (!cleanName) return;
+    update((current) => {
+      current.player.name = cleanName;
+      return current;
+    });
+    const cloud = getCloudClient();
+    if (cloud) {
+      const { error } = await cloud.auth.updateUser({
+        data: { child_name: cleanName },
+      });
+      if (error) {
+        setNameMessage(error.message);
+        return;
+      }
+    }
+    setNameMessage(`${cleanName}’s name was saved ✓`);
+  };
   const changePassword = async (event: FormEvent) => {
     event.preventDefault();
     const cloud = getCloudClient();
@@ -2005,7 +2181,34 @@ function SettingsView({
         </div>
       </div>
       <div className="settings-card">
-        <h2>Lara’s avatar</h2>
+        {user && (
+          <section className="account-settings">
+            <div className="account-settings-head">
+              <div>
+                <small>Parent account</small>
+                <b>{user.email}</b>
+              </div>
+              <Button variant="outline" onClick={() => void signOut()}>
+                Sign Out
+              </Button>
+            </div>
+            <form className="child-name-form" onSubmit={saveChildName}>
+              <label>
+                Child’s name
+                <input
+                  value={childName}
+                  onChange={(event) => setChildName(event.target.value)}
+                  maxLength={40}
+                  required
+                />
+              </label>
+              <Button type="submit">Save Child’s Name</Button>
+              {nameMessage && <output>{nameMessage}</output>}
+            </form>
+          </section>
+        )}
+        {user && <hr />}
+        <h2>{save.player.name}’s avatar</h2>
         <div className="avatar-setting">
           <Avatar save={save} />
           <div>

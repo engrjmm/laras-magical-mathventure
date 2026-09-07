@@ -39,7 +39,7 @@ export type SaveData = {
 export const DEFAULT_SAVE: SaveData = {
   version: 3,
   player: {
-    name: 'Lara',
+    name: 'Child',
     avatarType: 'default',
     totalCorrect: 0,
     currentStreak: 0,

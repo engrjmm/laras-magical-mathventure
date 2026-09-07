@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://magical-mathventure.vercel.app'),
   title: 'Magical Mathventure',
   description:
-    'Add, subtract, multiply, divide, explore magical worlds, and collect delightful treasures with Lara.',
+    'Add, subtract, multiply, divide, explore magical worlds, and collect delightful treasures.',
   applicationName: 'Magical Mathventure',
   manifest: '/manifest.webmanifest',
   icons: {
