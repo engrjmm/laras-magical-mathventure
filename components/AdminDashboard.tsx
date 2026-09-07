@@ -14,8 +14,51 @@ type Payment = {
   receipt_url?: string;
   status: 'pending' | 'approved' | 'rejected';
   submitted_at: string;
+  reviewed_at: string | null;
 };
 type Tab = 'overview' | 'clients' | 'payments' | 'settings';
+type AccessDetails = {
+  status: 'trial' | 'active' | 'pending' | 'expired';
+  label: string;
+  activatedAt: Date | null;
+  expiresAt: Date | null;
+};
+const DAY_MS = 24 * 60 * 60 * 1000;
+const accessDetailsFor = (
+  client: ChildProfile,
+  payments: Payment[],
+  now: number,
+): AccessDetails => {
+  const clientPayments = payments.filter(
+    (payment) => payment.parent_id === client.parent_id,
+  );
+  const approved = clientPayments
+    .filter((payment) => payment.status === 'approved')
+    .sort(
+      (a, b) =>
+        new Date(b.reviewed_at ?? b.submitted_at).getTime() -
+        new Date(a.reviewed_at ?? a.submitted_at).getTime(),
+    )[0];
+  if (approved) {
+    const activatedAt = new Date(approved.reviewed_at ?? approved.submitted_at);
+    const expiresAt = new Date(activatedAt.getTime() + 30 * DAY_MS);
+    return expiresAt.getTime() > now
+      ? { status: 'active', label: 'Active', activatedAt, expiresAt }
+      : { status: 'expired', label: 'Expired', activatedAt, expiresAt };
+  }
+  const activatedAt = new Date(client.created_at);
+  const expiresAt = new Date(activatedAt.getTime() + 2 * DAY_MS);
+  if (expiresAt.getTime() > now)
+    return { status: 'trial', label: '2-day trial', activatedAt, expiresAt };
+  if (clientPayments.some((payment) => payment.status === 'pending'))
+    return {
+      status: 'pending',
+      label: 'Payment pending',
+      activatedAt: null,
+      expiresAt: null,
+    };
+  return { status: 'expired', label: 'Expired', activatedAt, expiresAt };
+};
 
 export function AdminDashboard() {
   const [checked, setChecked] = useState(false),
@@ -36,7 +79,8 @@ export function AdminDashboard() {
     [createdLogin, setCreatedLogin] = useState<{
       email: string;
       password: string;
-    } | null>(null);
+    } | null>(null),
+    [dashboardNow] = useState(() => Date.now());
   const isAdmin =
     user?.email?.toLowerCase() ===
     process.env.NEXT_PUBLIC_ADMIN_EMAIL?.toLowerCase();
@@ -197,7 +241,13 @@ export function AdminDashboard() {
       </main>
     );
   const pending = payments.filter((p) => p.status === 'pending'),
-    approved = payments.filter((p) => p.status === 'approved');
+    approved = payments.filter((p) => p.status === 'approved'),
+    activeClients = clients.filter(
+      (client) =>
+        ['active', 'trial'].includes(
+          accessDetailsFor(client, payments, dashboardNow).status,
+        ),
+    );
   const tabs: { id: Tab; label: string; icon: typeof BarChart3 }[] = [
     { id: 'overview', label: 'Overview', icon: BarChart3 },
     { id: 'clients', label: 'Clients & Kids', icon: Users },
@@ -259,8 +309,8 @@ export function AdminDashboard() {
               </div>
               <div>
                 <span>✅</span>
-                <small>Approved payments</small>
-                <strong>{approved.length}</strong>
+                <small>Active access</small>
+                <strong>{activeClients.length}</strong>
               </div>
               <div>
                 <span>₱</span>
@@ -336,21 +386,47 @@ export function AdminDashboard() {
                 <div className="table-header">
                   <b>Parent email</b>
                   <b>Child</b>
+                  <b>Access</b>
+                  <b>Activated</b>
+                  <b>Expires</b>
                   <b>Correct</b>
                   <b>Problems</b>
                   <b>Last active</b>
                 </div>
-                {clients.map((client) => (
-                  <div key={client.id}>
-                    <span>{client.parent_email ?? 'Email pending sync'}</span>
-                    <b>{client.name}</b>
-                    <span>{client.save_data.player.totalCorrect}</span>
-                    <span>{client.save_data.player.problemsSolved}</span>
-                    <span>
-                      {new Date(client.updated_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                ))}
+                {clients.map((client) => {
+                  const access = accessDetailsFor(
+                    client,
+                    payments,
+                    dashboardNow,
+                  );
+                  return (
+                    <div key={client.id}>
+                      <span>{client.parent_email ?? 'Email pending sync'}</span>
+                      <b>{client.name}</b>
+                      <strong
+                        className="access-pill"
+                        data-status={access.status}
+                      >
+                        {access.label}
+                      </strong>
+                      <span>
+                        {access.activatedAt
+                          ? access.activatedAt.toLocaleDateString()
+                          : 'Not activated'}
+                      </span>
+                      <span>
+                        {access.expiresAt
+                          ? access.expiresAt.toLocaleDateString()
+                          : 'After approval'}
+                      </span>
+                      <span>{client.save_data.player.totalCorrect}</span>
+                      <span>{client.save_data.player.problemsSolved}</span>
+                      <span>
+                        {new Date(client.updated_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

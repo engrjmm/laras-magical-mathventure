@@ -7,6 +7,7 @@ export type ChildProfile = {
   parent_email?: string;
   name: string;
   save_data: SaveData;
+  created_at: string;
   updated_at: string;
 };
 
