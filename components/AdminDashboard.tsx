@@ -17,6 +17,7 @@ type Payment = {
   reviewed_at: string | null;
 };
 type Tab = 'overview' | 'clients' | 'payments' | 'settings';
+type ClientFilter = 'all' | 'setup' | 'pending' | 'granted' | 'expired';
 type RegisteredAccount = {
   id: string;
   email: string;
@@ -99,6 +100,7 @@ export function AdminDashboard() {
       [],
     ),
     [tab, setTab] = useState<Tab>('overview'),
+    [clientFilter, setClientFilter] = useState<ClientFilter>('all'),
     [message, setMessage] = useState(''),
     [currentAdminPassword, setCurrentAdminPassword] = useState(''),
     [newAdminPassword, setNewAdminPassword] = useState(''),
@@ -202,7 +204,10 @@ export function AdminDashboard() {
     setMessage(
       response.ok ? `${childName}’s access was removed.` : result.error ?? 'Failed.',
     );
-    if (response.ok) await refresh();
+    if (response.ok) {
+      await refresh();
+      setClientFilter('expired');
+    }
   };
   const changeAdminPassword = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -337,6 +342,84 @@ export function AdminDashboard() {
           accessDetailsFor(client, payments, dashboardNow).status,
         ),
     );
+  const clientBucket = (
+    parentId: string,
+    client?: ChildProfile,
+  ): Exclude<ClientFilter, 'all'> => {
+    const latestApproved = payments
+      .filter(
+        (payment) =>
+          payment.parent_id === parentId && payment.status === 'approved',
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.reviewed_at ?? b.submitted_at).getTime() -
+          new Date(a.reviewed_at ?? a.submitted_at).getTime(),
+      )[0];
+    if (latestApproved?.gcash_reference.startsWith('ADMIN-REVOKED-'))
+      return 'expired';
+    if (!client) return 'setup';
+    const access = accessDetailsFor(client, payments, dashboardNow);
+    if (access.status === 'pending') return 'pending';
+    if (access.status === 'active' || access.status === 'trial') return 'granted';
+    return 'expired';
+  };
+  const filterMatches = (bucket: Exclude<ClientFilter, 'all'>) =>
+    clientFilter === 'all' || clientFilter === bucket;
+  const nonAdminAccounts = registeredAccounts.filter(
+    (account) => account.email.toLowerCase() !== user.email?.toLowerCase(),
+  );
+  const clientFilterOptions: { id: ClientFilter; label: string; count: number }[] = [
+    {
+      id: 'all',
+      label: 'All Accounts',
+      count: registeredAccounts.length,
+    },
+    {
+      id: 'setup',
+      label: 'Awaiting Setup',
+      count: nonAdminAccounts.filter(
+        (account) =>
+          clientBucket(
+            account.id,
+            clients.find((client) => client.parent_id === account.id),
+          ) === 'setup',
+      ).length,
+    },
+    {
+      id: 'pending',
+      label: 'Awaiting Approval',
+      count: nonAdminAccounts.filter(
+        (account) =>
+          clientBucket(
+            account.id,
+            clients.find((client) => client.parent_id === account.id),
+          ) === 'pending',
+      ).length,
+    },
+    {
+      id: 'granted',
+      label: 'Granted Access',
+      count: nonAdminAccounts.filter(
+        (account) =>
+          clientBucket(
+            account.id,
+            clients.find((client) => client.parent_id === account.id),
+          ) === 'granted',
+      ).length,
+    },
+    {
+      id: 'expired',
+      label: 'Expired / Removed',
+      count: nonAdminAccounts.filter(
+        (account) =>
+          clientBucket(
+            account.id,
+            clients.find((client) => client.parent_id === account.id),
+          ) === 'expired',
+      ).length,
+    },
+  ];
   const tabs: { id: Tab; label: string; icon: typeof BarChart3 }[] = [
     { id: 'overview', label: 'Overview', icon: BarChart3 },
     { id: 'clients', label: 'Clients & Kids', icon: Users },
@@ -508,6 +591,19 @@ export function AdminDashboard() {
             </form>
             <div className="admin-panel">
               <h2>Registered parents and children</h2>
+              <div className="client-filter-tabs" role="tablist">
+                {clientFilterOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    role="tab"
+                    aria-selected={clientFilter === option.id}
+                    className={clientFilter === option.id ? 'active' : ''}
+                    onClick={() => setClientFilter(option.id)}
+                  >
+                    {option.label} <span>{option.count}</span>
+                  </button>
+                ))}
+              </div>
               <div className="client-table">
                 <div className="table-header">
                   <b>Parent email</b>
@@ -520,38 +616,51 @@ export function AdminDashboard() {
                   <b>Last active</b>
                   <b>Action</b>
                 </div>
-                <div>
+                {clientFilter === 'all' && <div>
                   <span>{user.email}</span>
                   <b>Administrator</b>
                   <strong className="access-pill" data-status="active">
                     Full access
                   </strong>
                   <span>—</span><span>Never</span><span>—</span><span>—</span><span>—</span><span>Protected</span>
-                </div>
+                </div>}
                 {registeredAccounts
                   .filter(
                     (account) =>
                       account.email.toLowerCase() !== user.email?.toLowerCase() &&
-                      !clients.some((client) => client.parent_id === account.id),
+                      !clients.some((client) => client.parent_id === account.id) &&
+                      filterMatches(clientBucket(account.id)),
                   )
-                  .map((account) => (
+                  .map((account) => {
+                    const removed = clientBucket(account.id) === 'expired';
+                    return (
                     <div key={account.id}>
                       <span>{account.email}</span>
                       <b>Profile not created</b>
-                      <strong className="access-pill" data-status="pending">
-                        Awaiting setup
+                      <strong
+                        className="access-pill"
+                        data-status={removed ? 'expired' : 'pending'}
+                      >
+                        {removed ? 'Access removed' : 'Awaiting setup'}
                       </strong>
                       <span>{new Date(account.createdAt).toLocaleDateString()}</span>
                       <span>—</span><span>—</span><span>—</span><span>—</span>
-                      <button
-                        className="remove-access"
-                        onClick={() => void removeAccess(account.id, account.email)}
-                      >
-                        Remove Access
-                      </button>
+                      {removed ? (
+                        <span className="access-removed">Removed</span>
+                      ) : (
+                        <button
+                          className="remove-access"
+                          onClick={() => void removeAccess(account.id, account.email)}
+                        >
+                          Remove Access
+                        </button>
+                      )}
                     </div>
-                  ))}
-                {clients.map((client) => {
+                    );
+                  })}
+                {clients.filter((client) =>
+                  filterMatches(clientBucket(client.parent_id, client)),
+                ).map((client) => {
                   const access = accessDetailsFor(
                     client,
                     payments,
@@ -584,14 +693,18 @@ export function AdminDashboard() {
                       <span>
                         {new Date(client.updated_at).toLocaleDateString()}
                       </span>
-                      <button
-                        className="remove-access"
-                        onClick={() =>
-                          void removeAccess(client.parent_id, client.name)
-                        }
-                      >
-                        Remove Access
-                      </button>
+                      {access.label === 'Access removed' ? (
+                        <span className="access-removed">Removed</span>
+                      ) : (
+                        <button
+                          className="remove-access"
+                          onClick={() =>
+                            void removeAccess(client.parent_id, client.name)
+                          }
+                        >
+                          Remove Access
+                        </button>
+                      )}
                     </div>
                   );
                 })}
