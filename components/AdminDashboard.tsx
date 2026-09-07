@@ -163,7 +163,7 @@ export function AdminDashboard() {
     setManualEmail('');
     setManualChildName('');
     setManualBirthDate('');
-    setMessage('Client account created and approved for 31 days ✓');
+    setMessage('Client account created and approved for 30 days ✓');
     await refresh();
   };
   if (!checked)
@@ -367,7 +367,7 @@ export function AdminDashboard() {
               <h2>Subscription settings</h2>
               <label>
                 Monthly price
-                <input value="₱300" readOnly />
+                <input value="₱300 for 30 days" readOnly />
               </label>
               <label>
                 Payment method

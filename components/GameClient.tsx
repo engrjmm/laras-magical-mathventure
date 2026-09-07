@@ -66,6 +66,9 @@ type SubscriptionPayment = {
   reviewed_at: string | null;
   gcash_reference: string;
 };
+const DAY_MS = 24 * 60 * 60 * 1000;
+const TRIAL_DURATION_MS = 2 * DAY_MS;
+const PAID_ACCESS_DURATION_MS = 30 * DAY_MS;
 const feedback = [
   'Correct, Lara! 🌟',
   'Amazing work! ✨',
@@ -512,14 +515,21 @@ export function GameClient() {
   const isAdministrator =
     cloudUser?.email?.toLowerCase() ===
     process.env.NEXT_PUBLIC_ADMIN_EMAIL?.toLowerCase();
+  const trialEndsAt = cloudUser
+    ? new Date(cloudUser.created_at).getTime() + TRIAL_DURATION_MS
+    : 0;
+  const trialActive = Boolean(cloudUser && Date.now() < trialEndsAt);
+  const trialDaysRemaining = trialActive
+    ? Math.max(1, Math.ceil((trialEndsAt - Date.now()) / DAY_MS))
+    : 0;
   const activeSubscription = subscriptionPayments.some((payment) => {
     if (payment.status !== 'approved') return false;
     const approvedAt = new Date(
       payment.reviewed_at ?? payment.submitted_at,
     ).getTime();
-    return Date.now() - approvedAt < 31 * 24 * 60 * 60 * 1000;
+    return Date.now() - approvedAt < PAID_ACCESS_DURATION_MS;
   });
-  if (cloudUser && !isAdministrator && !activeSubscription)
+  if (cloudUser && !isAdministrator && !trialActive && !activeSubscription)
     return (
       <SubscriptionGate
         user={cloudUser}
@@ -542,6 +552,12 @@ export function GameClient() {
           <small>Add • Subtract • Multiply • Divide • Collect</small>
         </button>
         <div className="top-stats">
+          {trialActive && !activeSubscription && (
+            <span>
+              🎁 Trial: {trialDaysRemaining} day
+              {trialDaysRemaining === 1 ? '' : 's'} left
+            </span>
+          )}
           <span>⭐ {save.player.totalCorrect}</span>
           <span>🔥 {save.player.currentStreak}</span>
           <button
@@ -801,9 +817,9 @@ function SubscriptionGate({
         ) : (
           <div className="subscription-checkout">
             <div className="price-card">
-              <small>MONTHLY FAMILY ACCESS</small>
+              <small>30-DAY FAMILY ACCESS</small>
               <strong>₱300</strong>
-              <span>per month</span>
+              <span>for 30 days</span>
               <ul>
                 <li>All four math operations</li>
                 <li>Progress saved across devices</li>
@@ -876,6 +892,7 @@ function LoginGate({
         <p className="eyebrow">Welcome to</p>
         <h1>Magical Mathventure</h1>
         <p>Sign in to continue your child’s learning adventure.</p>
+        <p className="trial-note">New accounts include a free 2-day trial.</p>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -1823,11 +1840,12 @@ function AccountView({
             <section className="subscription-card">
               <div>
                 <p className="eyebrow">Family subscription</p>
-                <h2>₱300 per month</h2>
+                <h2>₱300 for 30 days</h2>
               </div>
               <p>
-                Scan the QR code and send ₱300 through GCash. Then enter the
-                receipt reference number for administrator approval.
+                After the free 2-day trial, scan the QR code and send ₱300
+                through GCash for 30 days of access. Then enter the receipt
+                reference number for administrator approval.
               </p>
               <img
                 className="gcash-qr"
