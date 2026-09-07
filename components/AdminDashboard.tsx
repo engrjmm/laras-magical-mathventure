@@ -430,7 +430,10 @@ export function AdminDashboard() {
     <main className="admin-app">
       <aside className="admin-sidebar">
         <div className="admin-logo">
-          🧠{' '}
+          <img
+            src="/magical-mathventure-icon.png"
+            alt="Magical Mathventure"
+          />
           <span>
             Magical
             <br />
