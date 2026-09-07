@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { TREASURES } from '@/lib/game';
 import { DEFAULT_SAVE } from '@/lib/storage';
 
 type CreateClientRequest = {
@@ -112,6 +113,19 @@ export async function POST(request: Request) {
 
   const saveData = structuredClone(DEFAULT_SAVE);
   saveData.player.name = childName;
+  const starterTreasures = TREASURES.filter(
+    (treasure) => treasure.rarity === 'Common',
+  );
+  for (let index = starterTreasures.length - 1; index > 0; index--) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [starterTreasures[index], starterTreasures[randomIndex]] = [
+      starterTreasures[randomIndex],
+      starterTreasures[index],
+    ];
+  }
+  saveData.rewards.treasures = Object.fromEntries(
+    starterTreasures.slice(0, 10).map((treasure) => [treasure.name, 1]),
+  );
   const { error: profileError } = await admin.from('child_profiles').insert({
     parent_id: created.user.id,
     parent_email: parentEmail,

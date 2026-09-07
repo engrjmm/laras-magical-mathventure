@@ -364,8 +364,8 @@ export function AdminDashboard() {
                 <div>
                   <h2>Add a client manually</h2>
                   <p>
-                    Create one parent login and one child profile, then choose how
-                    long free access will last.
+                    Create one parent login and one child profile, choose how long
+                    free access will last, and unlock 10 surprise treasures.
                   </p>
                 </div>
               </div>
