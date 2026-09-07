@@ -17,6 +17,30 @@ export const metadata: Metadata = {
   title: 'Magical Mathventure',
   description:
     'Add, subtract, multiply, divide, explore magical worlds, and collect delightful treasures with Lara.',
+  applicationName: 'Magical Mathventure',
+  manifest: '/manifest.webmanifest',
+  icons: {
+    icon: [
+      {
+        url: '/favicon-32.png',
+        type: 'image/png',
+        sizes: '32x32',
+      },
+    ],
+    shortcut: '/favicon-32.png',
+    apple: [
+      {
+        url: '/apple-touch-icon.png',
+        type: 'image/png',
+        sizes: '180x180',
+      },
+    ],
+  },
+  appleWebApp: {
+    capable: true,
+    title: 'Mathventure',
+    statusBarStyle: 'default',
+  },
   openGraph: {
     title: 'Magical Mathventure',
     description: 'Multiply • Explore • Collect',
