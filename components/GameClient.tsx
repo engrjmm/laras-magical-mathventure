@@ -205,7 +205,11 @@ export function GameClient() {
       setCloudUser(data.user);
       setAuthChecked(true);
     });
-    const { data } = cloud.auth.onAuthStateChange((_event, session) => {
+    const { data } = cloud.auth.onAuthStateChange((event, session) => {
+      // Explicit password sign-ins are finalized in authenticate() after this
+      // device has claimed the account. Handling SIGNED_IN here can race that
+      // metadata update and falsely trigger the one-device guard.
+      if (event === 'SIGNED_IN') return;
       setCloudUser(session?.user ?? null);
       setAuthChecked(true);
     });
@@ -567,7 +571,14 @@ export function GameClient() {
       const updated = await cloud.auth.updateUser({
         data: { active_device_session: deviceSession },
       });
-      if (updated.data.user) setCloudUser(updated.data.user);
+      if (updated.error) {
+        localStorage.removeItem(DEVICE_SESSION_KEY);
+        await cloud.auth.signOut({ scope: 'local' });
+        setCloudMessage(`Could not secure this device: ${updated.error.message}`);
+        return;
+      }
+      setCloudUser(updated.data.user ?? result.data.user);
+      setAuthChecked(true);
     }
     setCloudMessage(
       result.error
