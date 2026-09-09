@@ -206,22 +206,22 @@ const themes = [
   ['💫', 'Starlight'],
 ] as const;
 const kinds = [
-  'Charm',
-  'Crystal',
-  'Lantern',
-  'Tiara',
-  'Wand',
-  'Music Box',
-  'Key',
-  'Locket',
-  'Teacup',
-  'Snow Globe',
+  ['🧿', 'Charm'],
+  ['💎', 'Crystal'],
+  ['🏮', 'Lantern'],
+  ['👸', 'Tiara'],
+  ['🪄', 'Wand'],
+  ['🎵', 'Music Box'],
+  ['🗝️', 'Key'],
+  ['💝', 'Locket'],
+  ['☕', 'Teacup'],
+  ['🔮', 'Snow Globe'],
 ] as const;
 export const TREASURES = [
   ...originals.map(([icon, name, rarity]) => ({ icon, name, rarity })),
-  ...themes.flatMap(([icon, theme], ti) =>
-    kinds.map((kind, ki) => ({
-      icon,
+  ...themes.flatMap(([themeIcon, theme], ti) =>
+    kinds.map(([kindIcon, kind], ki) => ({
+      icon: `${themeIcon}${kindIcon}`,
       name: `${theme} ${kind}`,
       rarity:
         ki === 9 && ti > 7
